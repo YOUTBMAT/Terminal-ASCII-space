@@ -1,0 +1,9 @@
+/var/home/youtbmat/Projetos/space-terminal/target/debug/build/signal-hook-registry/852d8def67c4f77a/out/signal_hook_registry-852d8def67c4f77a.d: /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/half_lock.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/vec_map.rs
+
+/var/home/youtbmat/Projetos/space-terminal/target/debug/build/signal-hook-registry/852d8def67c4f77a/out/libsignal_hook_registry-852d8def67c4f77a.rlib: /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/half_lock.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/vec_map.rs
+
+/var/home/youtbmat/Projetos/space-terminal/target/debug/build/signal-hook-registry/852d8def67c4f77a/out/libsignal_hook_registry-852d8def67c4f77a.rmeta: /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/half_lock.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/vec_map.rs
+
+/var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/lib.rs:
+/var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/half_lock.rs:
+/var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8/src/vec_map.rs:
