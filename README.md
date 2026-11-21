@@ -23,7 +23,18 @@ cargo build --release
 cargo run --release
 ```
 
-O programa inicia o shell definido por `$SHELL` (ou `powershell.exe` no Windows) dentro do compositor.
+O programa inicia o shell definido por `$SHELL` (ou `powershell.exe` no Windows) dentro do compositor. Em instalações Bash, a configuração de inicialização pode chamar `space-terminal` automaticamente para cada terminal interativo; sem `--theme`, ele reutiliza o último tema selecionado (salvo em `$XDG_CONFIG_HOME/space-terminal/theme`, ou `~/.config/space-terminal/theme`).
+
+Para iniciar automaticamente em cada terminal Bash interativo, adicione ao final de `~/.bashrc`:
+
+```bash
+if [[ -t 0 && -t 1 && -z "${SPACE_TERMINAL_ACTIVE:-}" ]] &&
+   [[ -x "$HOME/.cargo/bin/space-terminal" ]]; then
+  exec "$HOME/.cargo/bin/space-terminal"
+fi
+```
+
+O `exec` evita deixar um shell extra por trás do compositor; o shell filho do PTY usa `SPACE_TERMINAL_ACTIVE` para não iniciar outra instância.
 
 ## Temas
 

@@ -94,6 +94,8 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
     let terminate = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&terminate))?;
     signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&terminate))?;
+    #[cfg(unix)]
+    signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&terminate))?;
 
     let size = terminal::size()?;
     theme.resize(size.0, size.1);
@@ -149,15 +151,30 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                 .unwrap_or(CHILD_POLL_TIME)
         };
         let timeout = until_frame.min(next_child_poll.saturating_duration_since(loop_now));
-        if event::poll(timeout)? {
-            match event::read()? {
+        let event = match event::poll(timeout) {
+            Ok(true) => match event::read() {
+                Ok(event) => Some(event),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => None,
+                Err(_) if terminate.load(Ordering::Relaxed) => break,
+                Err(error) => return Err(error.into()),
+            },
+            Ok(false) => None,
+            Err(_) if terminate.load(Ordering::Relaxed) => break,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        };
+        if terminate.load(Ordering::Relaxed) {
+            break;
+        }
+        if let Some(event) = event {
+            match event {
                 Event::Key(key) if key.kind != crossterm::event::KeyEventKind::Release => {
                     if key.code == KeyCode::F(10) {
                         break;
                     }
                     if is_alt_char(key, 't') {
                         let next_id = themes::next_id(theme.id());
-                        let name = activate_theme(
+                        let (name, preference_error) = activate_theme(
                             &mut theme,
                             next_id,
                             size_for(&terminal_grid),
@@ -165,7 +182,7 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                             &mut renderer,
                         )?;
                         status_notice = Some((
-                            format!("Tema: {name}"),
+                            theme_notice(name, preference_error),
                             Rgb(92, 207, 220),
                             Instant::now() + Duration::from_secs(2),
                         ));
@@ -203,7 +220,7 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                             }
                             KeyCode::Enter => {
                                 let selected = themes::available()[picker_selection];
-                                let name = activate_theme(
+                                let (name, preference_error) = activate_theme(
                                     &mut theme,
                                     selected.id,
                                     size_for(&terminal_grid),
@@ -211,7 +228,7 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                                     &mut renderer,
                                 )?;
                                 status_notice = Some((
-                                    format!("Tema: {name}"),
+                                    theme_notice(name, preference_error),
                                     Rgb(92, 207, 220),
                                     Instant::now() + Duration::from_secs(2),
                                 ));
@@ -349,7 +366,12 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
             .map(|(text, accent, _)| (text.as_str(), *accent));
         theme.render(&mut canvas);
         let picker = picker_open.then_some((themes::available(), picker_selection));
-        renderer.draw(&canvas, &terminal_grid, !paused, notice, picker)?;
+        if let Err(error) = renderer.draw(&canvas, &terminal_grid, !paused, notice, picker) {
+            if terminate.load(Ordering::Relaxed) {
+                break;
+            }
+            return Err(error.into());
+        }
     }
 
     Ok(())
@@ -374,7 +396,7 @@ fn activate_theme(
     (width, height): (u16, u16),
     canvas: &mut Canvas,
     renderer: &mut Renderer,
-) -> io::Result<&'static str> {
+) -> io::Result<(&'static str, Option<String>)> {
     let mut replacement = themes::create(id, width, height).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -384,9 +406,16 @@ fn activate_theme(
     replacement.resize(width, height);
     let name = replacement.name();
     *theme = replacement;
+    let preference_error = crate::config::save_theme(id)
+        .err()
+        .map(|error| format!("Não foi possível salvar o tema: {error}"));
     canvas.clear();
     renderer.force_redraw();
-    Ok(name)
+    Ok((name, preference_error))
+}
+
+fn theme_notice(name: &str, preference_error: Option<String>) -> String {
+    preference_error.unwrap_or_else(|| format!("Tema: {name}"))
 }
 
 fn size_for(terminal: &super::pty_shell::TerminalGrid) -> (u16, u16) {
