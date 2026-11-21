@@ -8,6 +8,8 @@ fn theme_path() -> io::Result<PathBuf> {
         .filter(|path| !path.is_empty())
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .or_else(|| env::var_os("APPDATA").map(PathBuf::from))
+        .or_else(|| env::var_os("USERPROFILE").map(|user| PathBuf::from(user).join(".config")))
         .ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "home/config directory unavailable")
         })?;

@@ -408,14 +408,14 @@ fn activate_theme(
     *theme = replacement;
     let preference_error = crate::config::save_theme(id)
         .err()
-        .map(|error| format!("Não foi possível salvar o tema: {error}"));
+        .map(|error| format!("Could not save theme preference: {error}"));
     canvas.clear();
     renderer.force_redraw();
     Ok((name, preference_error))
 }
 
 fn theme_notice(name: &str, preference_error: Option<String>) -> String {
-    preference_error.unwrap_or_else(|| format!("Tema: {name}"))
+    preference_error.unwrap_or_else(|| format!("Theme: {name}"))
 }
 
 fn size_for(terminal: &super::pty_shell::TerminalGrid) -> (u16, u16) {

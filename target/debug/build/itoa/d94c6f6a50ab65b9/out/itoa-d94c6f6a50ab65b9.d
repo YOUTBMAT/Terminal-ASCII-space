@@ -1,8 +1,0 @@
-/var/home/youtbmat/Projetos/space-terminal/target/debug/build/itoa/d94c6f6a50ab65b9/out/itoa-d94c6f6a50ab65b9.d: /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/lib.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/u128_ext.rs
-
-/var/home/youtbmat/Projetos/space-terminal/target/debug/build/itoa/d94c6f6a50ab65b9/out/libitoa-d94c6f6a50ab65b9.rlib: /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/lib.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/u128_ext.rs
-
-/var/home/youtbmat/Projetos/space-terminal/target/debug/build/itoa/d94c6f6a50ab65b9/out/libitoa-d94c6f6a50ab65b9.rmeta: /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/lib.rs /var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/u128_ext.rs
-
-/var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/lib.rs:
-/var/home/youtbmat/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.19/src/u128_ext.rs:
