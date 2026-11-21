@@ -339,10 +339,7 @@ fn draw_picker_row(
             let title = "Selecionar tema";
             let title_start =
                 layout.left + (layout.width.saturating_sub(title.chars().count()) / 2);
-            glyph = title
-                .chars()
-                .nth(column.saturating_sub(title_start))
-                .unwrap_or(' ');
+            glyph = char_at_cell(title, column, title_start);
             fg = Rgb(129, 222, 235);
         } else if relative_y >= 2 && relative_y < layout.height - 2 {
             let item_index = layout.first_item + relative_y - 2;
@@ -353,10 +350,7 @@ fn draw_picker_row(
                     if is_selected { "›" } else { " " },
                     items[item_index].name
                 );
-                glyph = label
-                    .chars()
-                    .nth(relative_x.saturating_sub(2))
-                    .unwrap_or(' ');
+                glyph = char_at_cell(&label, relative_x, 2);
                 if is_selected {
                     fg = Rgb(7, 22, 32);
                     bg = Rgb(75, 204, 207);
@@ -364,10 +358,7 @@ fn draw_picker_row(
             }
         } else if relative_y == layout.height - 2 {
             let footer = "↑/↓ mover Enter trocar Esc fechar";
-            glyph = footer
-                .chars()
-                .nth(relative_x.saturating_sub(2))
-                .unwrap_or(' ');
+            glyph = char_at_cell(footer, relative_x, 2);
             fg = Rgb(138, 158, 179);
         }
         cell.ch = glyph;
@@ -376,6 +367,13 @@ fn draw_picker_row(
         cell.attrs = 0;
         cell.wide_continuation = false;
     }
+}
+
+fn char_at_cell(text: &str, column: usize, start: usize) -> char {
+    column
+        .checked_sub(start)
+        .and_then(|offset| text.chars().nth(offset))
+        .unwrap_or(' ')
 }
 
 fn same_style(left: Cell, right: Cell) -> bool {
@@ -595,6 +593,72 @@ mod tests {
         let short_layout = picker_layout(30, 7, &items, 2).unwrap();
         assert_eq!(short_layout.visible_items, 3);
         assert_eq!(short_layout.first_item, 0);
+    }
+
+    #[test]
+    fn picker_text_does_not_repeat_first_character_in_padding() {
+        let items = [ThemeMetadata {
+            id: "space",
+            name: "Space",
+            description: "",
+        }];
+        let layout = picker_layout(80, 24, &items, 0).unwrap();
+        let mut cells = vec![Cell::default(); 80];
+
+        draw_picker_row(&mut cells, (layout.top + 1) as u16, 80, 24, &items, 0);
+        let title_start = layout.left + (layout.width - "Selecionar tema".chars().count()) / 2;
+        let title: Vec<char> = cells
+            .iter()
+            .skip(layout.left)
+            .take(layout.width)
+            .map(|cell| cell.ch)
+            .collect();
+        assert!(title[1..title_start - layout.left]
+            .iter()
+            .all(|glyph| *glyph == ' '));
+        assert_eq!(
+            title[title_start - layout.left
+                ..title_start - layout.left + "Selecionar tema".chars().count()]
+                .iter()
+                .copied()
+                .collect::<String>(),
+            "Selecionar tema",
+        );
+
+        draw_picker_row(&mut cells, (layout.top + 2) as u16, 80, 24, &items, 0);
+        let item_row: String = cells
+            .iter()
+            .skip(layout.left)
+            .take(layout.width)
+            .map(|cell| cell.ch)
+            .collect();
+        assert_eq!(item_row.chars().nth(1), Some(' '));
+        assert_eq!(item_row.chars().nth(2), Some('›'));
+
+        draw_picker_row(
+            &mut cells,
+            (layout.top + layout.height - 2) as u16,
+            80,
+            24,
+            &items,
+            0,
+        );
+        let footer_row: String = cells
+            .iter()
+            .skip(layout.left)
+            .take(layout.width)
+            .map(|cell| cell.ch)
+            .collect();
+        assert_eq!(footer_row.chars().nth(1), Some(' '));
+        let footer = "↑/↓ mover Enter trocar Esc fechar";
+        assert_eq!(
+            footer_row
+                .chars()
+                .skip(2)
+                .take(footer.chars().count())
+                .collect::<String>(),
+            footer
+        );
     }
 
     #[test]

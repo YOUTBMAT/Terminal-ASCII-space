@@ -4,29 +4,43 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::engine::{canvas::Cell, Canvas, Rgb, Theme};
 
-const MAX_BUBBLES: usize = 48;
+const MAX_BUBBLES: usize = 32;
 const MAX_SHARKS: usize = 2;
 const MAX_FOREGROUND_CREATURES: usize = 3;
-const MEDIUM_SHARK_A: [&str; 4] = ["   /\\____", "__/ o   \\___>", "  \\_______/", "   \\_/"];
-const MEDIUM_SHARK_B: [&str; 4] = ["  /\\_____", "___/ o  \\____>", "  \\_______/", "    /_\\"];
-const LARGE_SHARK_A: [&str; 4] = [
-    "     /\\________",
-    "____/  o       \\_____>",
-    "    \\______________/",
-    "        \\___/",
+const MEDIUM_SHARK_A: [&str; 5] = [
+    "     ▄██▄       ",
+    "  ▄████████▄    ",
+    "◀███▓███████●▶  ",
+    "  ▀████████▀    ",
+    "     ▀██▀       ",
 ];
-const LARGE_SHARK_B: [&str; 4] = [
-    "    /\\_________",
-    "___/  o       \\______>",
-    "    \\______________/",
-    "       /____\\",
+const MEDIUM_SHARK_B: [&str; 5] = [
+    "      ▄██▄      ",
+    "  ▄████████▄    ",
+    "◀███▓███████●▶  ",
+    "  ▀████████▀    ",
+    "      ▀██▀      ",
 ];
-const TROPICAL_A: [&str; 3] = ["  .^.", "_(o=)>", "  'v'"];
-const TROPICAL_B: [&str; 3] = ["  .^.", "_(o=)>", "   'v'"];
-const RAY_A: [&str; 3] = [" \\    / ", "  \\__/  ", "   \\/   "];
-const RAY_B: [&str; 3] = ["  \\  /  ", "   \\/   ", "   /\\   "];
-const JELLY_A: [&str; 4] = [" .---.", "( o o )", " \\| |/ ", "  | |  "];
-const JELLY_B: [&str; 4] = [" .---.", "( o o )", "  \\|/  ", "  / \\  "];
+const LARGE_SHARK_A: [&str; 5] = [
+    "       ▄████▄        ",
+    "    ▄██████████▄     ",
+    "◀██████▓█████████●▶  ",
+    "    ▀██████████▀     ",
+    "       ▀████▀        ",
+];
+const LARGE_SHARK_B: [&str; 5] = [
+    "        ▄████▄       ",
+    "    ▄██████████▄     ",
+    "◀██████▓█████████●▶  ",
+    "    ▀██████████▀     ",
+    "        ▀████▀       ",
+];
+const TROPICAL_A: [&str; 3] = ["  ▄▓█▄  ", "◀█▓██▓●▶", "  ▀▓█▀  "];
+const TROPICAL_B: [&str; 3] = ["   ▄▓█▄ ", "◀█▓██▓●▶", "   ▀▓█▀ "];
+const RAY_A: [&str; 4] = ["   ▄██▄   ", "▄████████▄", "▀████████▀", "  ▀█▀▀█▀  "];
+const RAY_B: [&str; 4] = ["  ▄████▄  ", "▄████████▄", "▀████████▀", "   ▀██▀   "];
+const JELLY_A: [&str; 4] = ["  ▄████▄  ", " ▓██████▓ ", "  ▀████▀  ", " ░║░║░║░  "];
+const JELLY_B: [&str; 4] = ["  ▄████▄  ", " ▓██████▓ ", "  ▀████▀  ", "  ░║║║░   "];
 
 #[derive(Clone, Copy)]
 enum BedKind {
@@ -135,7 +149,7 @@ impl OceanTheme {
             rng: StdRng::from_entropy(),
         };
         theme.rebuild_seabed();
-        theme.bubbles = (0..20).map(|_| theme.new_bubble(false)).collect();
+        theme.bubbles = (0..14).map(|_| theme.new_bubble(false)).collect();
         theme.fish.clear();
         for _ in 0..3 {
             let school = theme.new_fish_school();
@@ -158,7 +172,7 @@ impl OceanTheme {
         if self.width == 0 || self.height == 0 {
             return;
         }
-        let count = (self.width as usize / 12).clamp(1, 10);
+        let count = (self.width as usize / 8).clamp(1, 14);
         let spacing = self.width as f32 / count as f32;
         let coral_colors = [
             Rgb(204, 91, 128),
@@ -226,7 +240,7 @@ impl OceanTheme {
             speed: self.rng.gen_range(1.0..2.8),
             direction,
             phase: self.rng.gen_range(0.0..std::f32::consts::TAU),
-            color: [Rgb(55, 116, 135), Rgb(64, 124, 137), Rgb(81, 115, 145)]
+            color: [Rgb(48, 113, 142), Rgb(60, 127, 149), Rgb(77, 116, 151)]
                 [self.rng.gen_range(0..3)],
         }
     }
@@ -239,7 +253,7 @@ impl OceanTheme {
         let speed = self.rng.gen_range(1.0..2.0);
         let phase = self.rng.gen_range(0.0..std::f32::consts::TAU);
         let color =
-            [Rgb(55, 116, 135), Rgb(64, 124, 137), Rgb(81, 115, 145)][self.rng.gen_range(0..3)];
+            [Rgb(48, 113, 142), Rgb(60, 127, 149), Rgb(77, 116, 151)][self.rng.gen_range(0..3)];
         (0..4)
             .map(|index| SmallFish {
                 x: start_x - direction * index as f32 * 5.0,
@@ -325,7 +339,7 @@ impl OceanTheme {
             }
         }
         if self.bubbles.len() < MAX_BUBBLES {
-            self.bubble_emission += dt * (0.3 + activity * 0.48);
+            self.bubble_emission += dt * (0.12 + activity * 0.34);
             while self.bubble_emission >= 1.0 && self.bubbles.len() < MAX_BUBBLES {
                 self.bubble_emission -= 1.0;
                 let bubble = self.new_bubble(true);
@@ -439,7 +453,7 @@ impl OceanTheme {
         let sand_top = Rgb(116, 89, 49);
         let sand_bottom = Rgb(43, 37, 31);
         for x in 0..scene.width as i32 {
-            let surface_wave = (x as f32 * 0.09 + self.time * 0.22).sin().round() as i32;
+            let surface_wave = (hash(x as u32, 0) % 3) as i32 - 1;
             let ground_y = (base_y + surface_wave).clamp(0, scene.height as i32 - 1);
             for y in ground_y..scene.height as i32 {
                 let depth = (y - ground_y) as f32 / (scene.height as i32 - ground_y).max(1) as f32;
@@ -449,7 +463,11 @@ impl OceanTheme {
                     bg = mix(bg, Rgb(135, 105, 57), 0.22);
                 }
                 let glyph = if y == ground_y {
-                    '~'
+                    if noise % 3 == 0 {
+                        '▀'
+                    } else {
+                        '~'
+                    }
                 } else if noise % 19 == 0 {
                     '▓'
                 } else if noise % 7 == 0 {
@@ -480,16 +498,45 @@ impl OceanTheme {
         let bottom = scene.height as i32 - 1;
         let branches = feature
             .height
-            .min(self.seabed_height.saturating_add(1) as u8) as i32;
+            .min(self.seabed_height.saturating_add(2) as u8) as i32;
         for segment in 0..branches {
             let y = bottom - segment;
-            let sway = (self.time * 0.8 + feature.phase + segment as f32 * 0.55).sin() * 0.7;
+            let sway = (self.time * 0.16 + feature.phase + segment as f32 * 0.55).sin() * 0.35;
             let center = feature.x.round() as i32 + sway.round() as i32;
-            let stem = if segment == branches - 1 { '^' } else { '¥' };
-            scene.put_feature(center, y, stem, feature.color);
+            let stem = match segment % 3 {
+                0 => '█',
+                1 => '▓',
+                _ => '▒',
+            };
+            let shaded = mix(feature.color, Rgb(255, 190, 160), segment as f32 * 0.08);
+            scene.put_feature(center, y, stem, shaded);
             if segment > 0 && segment % 2 == 0 {
-                scene.put_feature(center - 1, y + 1, '(', feature.color);
-                scene.put_feature(center + 1, y + 1, ')', feature.color);
+                scene.put_feature(
+                    center - 1,
+                    y + 1,
+                    if segment % 3 == 0 { '◢' } else { '▌' },
+                    mix(feature.color, Rgb(255, 182, 151), 0.2),
+                );
+                scene.put_feature(
+                    center + 1,
+                    y + 1,
+                    if segment % 3 == 0 { '◣' } else { '▐' },
+                    mix(feature.color, Rgb(255, 182, 151), 0.12),
+                );
+            }
+            if segment == branches - 1 {
+                scene.put_feature(
+                    center - 1,
+                    y,
+                    '●',
+                    mix(feature.color, Rgb(255, 214, 174), 0.3),
+                );
+                scene.put_feature(
+                    center + 1,
+                    y,
+                    '●',
+                    mix(feature.color, Rgb(255, 214, 174), 0.22),
+                );
             }
         }
     }
@@ -500,17 +547,17 @@ impl OceanTheme {
             .min(self.seabed_height.saturating_add(2) as u8) as i32;
         for segment in 0..height {
             let y = scene.height as i32 - 1 - segment;
-            let sway = (self.time * 0.65 + feature.phase + segment as f32 * 0.44).sin() * 1.3;
+            let sway = (self.time * 0.24 + feature.phase + segment as f32 * 0.44).sin() * 1.0;
             let center = feature.x.round() as i32 + sway.round() as i32;
-            let glyph = if segment == height - 1 || segment % 3 == 2 {
-                '♣'
+            let glyph = if segment == height - 1 {
+                '◈'
             } else if segment % 2 == 0 {
-                '¥'
+                '▌'
             } else {
-                '|'
+                '▐'
             };
             let color = if segment == height - 1 {
-                Rgb(92, 175, 129)
+                Rgb(126, 201, 140)
             } else {
                 feature.color
             };
@@ -519,7 +566,7 @@ impl OceanTheme {
                 scene.put_feature(
                     center - 1,
                     y,
-                    if segment % 3 == 0 { '(' } else { ')' },
+                    if segment % 3 == 0 { '◢' } else { '◣' },
                     color,
                 );
             }
@@ -529,7 +576,8 @@ impl OceanTheme {
     fn render_rock(&self, scene: &mut SceneBuffer<'_>, feature: BedFeature) {
         let x = feature.x.round() as i32;
         let bottom = scene.height as i32 - 1;
-        for (dy, row) in [" ▒▓▒ ", "▓███▓", "█████"].iter().enumerate() {
+        for (dy, row) in [" ░▓▒ ", "▒████▒", "▓█████▓"].iter().enumerate()
+        {
             for (dx, glyph) in row.chars().enumerate() {
                 if glyph == ' ' {
                     continue;
@@ -547,30 +595,33 @@ impl OceanTheme {
     fn render_bubbles(&self, scene: &mut SceneBuffer<'_>) {
         for bubble in &self.bubbles {
             let glyph = match bubble.size {
-                1 => '·',
-                2 => '°',
-                3 => 'o',
-                _ => 'O',
+                1 => '●',
+                2 => '◉',
+                3 => '◎',
+                _ => '⦿',
             };
             let x = bubble.x + (self.time * 1.15 + bubble.phase).sin() * 0.9;
-            let y = bubble.y;
-            let color = Rgb(87, 169, 197);
-            scene.put_object(x.round() as i32, y.round() as i32, glyph, color);
-            if bubble.size == 4 {
-                scene.put_object(
-                    x.round() as i32 + 1,
-                    y.round() as i32,
-                    '◌',
-                    Rgb(60, 127, 163),
-                );
+            let ix = x.round() as i32;
+            let iy = bubble.y.round() as i32;
+            let color = match bubble.size {
+                1 => Rgb(117, 200, 221),
+                2 => Rgb(135, 215, 235),
+                3 => Rgb(164, 225, 238),
+                _ => Rgb(186, 233, 241),
+            };
+            if bubble.size >= 3 {
+                scene.put_object(ix - 1, iy, '░', Rgb(48, 112, 145));
+                scene.put_object(ix + 1, iy, '░', Rgb(48, 112, 145));
             }
+            scene.put_object(ix, iy, glyph, color);
+            scene.put_object(ix - 1, iy - 1, '·', Rgb(205, 241, 245));
         }
     }
 
     fn render_fish(&self, scene: &mut SceneBuffer<'_>) {
         for fish in &self.fish {
             let y = fish.y + (self.time * 0.9 + fish.phase).sin() * 0.35;
-            let sprite = ["~<°>"];
+            let sprite = ["  ▄▓▄  ", "◀████●▶", "  ▀▓▀  "];
             scene.draw_sprite(
                 fish.x.round() as i32,
                 y.round() as i32,
@@ -578,8 +629,8 @@ impl OceanTheme {
                 fish.direction,
                 SpriteStyle {
                     color: fish.color,
-                    eye_color: Rgb(190, 218, 210),
-                    eye_row: 0,
+                    eye_color: Rgb(222, 243, 231),
+                    eye_row: 1,
                 },
             );
         }
@@ -606,7 +657,7 @@ impl OceanTheme {
                         Rgb(96, 155, 181)
                     },
                     eye_color: Rgb(222, 239, 226),
-                    eye_row: 1,
+                    eye_row: 2,
                 },
             );
         }
@@ -724,16 +775,13 @@ fn seabed_height(height: u16) -> u16 {
 
 fn shark_width(size: SharkSize) -> u16 {
     match size {
-        SharkSize::Medium => 13,
-        SharkSize::Large => 22,
+        SharkSize::Medium => 16,
+        SharkSize::Large => 21,
     }
 }
 
-fn shark_height(size: SharkSize) -> u16 {
-    match size {
-        SharkSize::Medium => 4,
-        SharkSize::Large => 4,
-    }
+fn shark_height(_size: SharkSize) -> u16 {
+    5
 }
 
 fn make_cell(ch: char, fg: Rgb, bg: Rgb) -> Cell {
@@ -814,41 +862,27 @@ impl SceneBuffer<'_> {
         direction: f32,
         style: SpriteStyle,
     ) -> bool {
-        let mut clear = true;
-        for (row_index, row) in sprite.iter().enumerate() {
-            for_each_sprite_glyph(row, direction, |column, glyph| {
-                let cell_x = x + column as i32;
-                let cell_y = y + row_index as i32;
-                if glyph != ' '
-                    && cell_x >= 0
-                    && cell_y >= 0
-                    && cell_x < self.width as i32
-                    && cell_y < self.height as i32
-                    && self.occupied[cell_y as usize * self.width as usize + cell_x as usize]
-                {
-                    clear = false;
-                }
-            });
-        }
-        if !clear {
-            return false;
-        }
+        let mut visible = false;
         for (row_index, row) in sprite.iter().enumerate() {
             for_each_sprite_glyph(row, direction, |column, glyph| {
                 if glyph == ' ' {
                     return;
                 }
-                let fg = if row_index == style.eye_row && glyph == 'o' {
+                let fg = if row_index == style.eye_row && glyph == '●' {
                     style.eye_color
-                } else if glyph == '>' || glyph == '<' {
-                    mix(style.color, style.eye_color, 0.28)
+                } else if matches!(glyph, '▄' | '▀' | '◢' | '◣') {
+                    mix(style.color, Rgb(224, 242, 235), 0.25)
+                } else if matches!(glyph, '▓' | '▒' | '░') {
+                    mix(style.color, Rgb(12, 39, 61), 0.32)
+                } else if glyph == '▶' || glyph == '◀' {
+                    mix(style.color, Rgb(180, 218, 228), 0.28)
                 } else {
                     style.color
                 };
-                self.put_object(x + column as i32, y + row_index as i32, glyph, fg);
+                visible |= self.put_object(x + column as i32, y + row_index as i32, glyph, fg);
             });
         }
-        true
+        visible
     }
 }
 
@@ -874,6 +908,10 @@ fn mirror(glyph: char) -> char {
         ']' => '[',
         '{' => '}',
         '}' => '{',
+        '◀' => '▶',
+        '▶' => '◀',
+        '◢' => '◣',
+        '◣' => '◢',
         '/' => '\\',
         '\\' => '/',
         _ => glyph,
@@ -898,7 +936,7 @@ mod tests {
         assert!(canvas
             .cells_mut()
             .iter()
-            .any(|cell| { matches!(cell.ch, '♣' | '¥' | '^' | '(' | ')' | '▓') }));
+            .any(|cell| { matches!(cell.ch, '◈' | '█' | '▐' | '▓') }));
 
         theme.resize(45, 12);
         theme.render(&mut canvas);
@@ -952,6 +990,51 @@ mod tests {
             .all(|row| row.chars().count() <= shark_width(SharkSize::Large) as usize));
         assert_eq!(mirror('/'), '\\');
         assert_eq!(mirror('<'), '>');
+        assert_eq!(mirror('◀'), '▶');
+        assert!(
+            MEDIUM_SHARK_A
+                .iter()
+                .chain(LARGE_SHARK_A.iter())
+                .flat_map(|line| line.chars())
+                .filter(|glyph| matches!(glyph, '█' | '▓' | '▄' | '▀'))
+                .count()
+                > 30
+        );
+        assert!(TROPICAL_A
+            .iter()
+            .chain(RAY_A.iter())
+            .chain(JELLY_A.iter())
+            .flat_map(|line| line.chars())
+            .any(|glyph| matches!(glyph, '█' | '▓' | '▄' | '▀')));
+    }
+
+    #[test]
+    fn seabed_sand_color_profile_is_steady_while_plants_sway() {
+        let mut theme = OceanTheme::new(80, 24);
+        let mut first_cells = vec![Cell::default(); 80 * 24];
+        let mut first_occupancy = vec![false; 80 * 24];
+        theme.render_seabed(&mut SceneBuffer {
+            cells: &mut first_cells,
+            occupied: &mut first_occupancy,
+            width: 80,
+            height: 24,
+        });
+        let first_profile = first_cells.iter().map(|cell| cell.bg).collect::<Vec<_>>();
+
+        theme.time = 60.0;
+        let mut second_cells = vec![Cell::default(); 80 * 24];
+        let mut second_occupancy = vec![false; 80 * 24];
+        theme.render_seabed(&mut SceneBuffer {
+            cells: &mut second_cells,
+            occupied: &mut second_occupancy,
+            width: 80,
+            height: 24,
+        });
+
+        assert_eq!(
+            first_profile,
+            second_cells.iter().map(|cell| cell.bg).collect::<Vec<_>>()
+        );
     }
 
     #[test]

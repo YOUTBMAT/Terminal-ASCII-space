@@ -1,10 +1,11 @@
+mod config;
 pub mod engine;
 pub mod themes;
 
 use std::{env, error::Error};
 
 struct Options {
-    theme: String,
+    theme: Option<String>,
     fps: u16,
     list: bool,
     help: bool,
@@ -23,24 +24,47 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    let saved_theme = match config::load_theme() {
+        Ok(theme) => theme,
+        Err(error) => {
+            eprintln!("Could not read saved theme preference: {error}");
+            None
+        }
+    };
+    let requested_theme = options
+        .theme
+        .as_deref()
+        .or(saved_theme.as_deref())
+        .unwrap_or("space");
     let (width, height) = crossterm::terminal::size()?;
-    let theme = themes::create(&options.theme, width, height).ok_or_else(|| {
-        let available = themes::available()
-            .iter()
-            .map(|theme| theme.id)
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(
-            "unknown theme '{}'. Available themes: {available}",
-            options.theme
-        )
-    })?;
+    let theme = match themes::create(requested_theme, width, height) {
+        Some(theme) => theme,
+        None if options.theme.is_none() => {
+            eprintln!("Saved theme '{requested_theme}' is unavailable; using 'space'.");
+            themes::create("space", width, height).expect("space theme is registered")
+        }
+        None => {
+            let available = themes::available()
+                .iter()
+                .map(|theme| theme.id)
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "unknown theme '{}'. Available themes: {available}",
+                requested_theme
+            )
+            .into());
+        }
+    };
+    if let Err(error) = config::save_theme(theme.id()) {
+        eprintln!("Could not save theme preference: {error}");
+    }
     engine::run(theme, options.fps)
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String> {
     let mut options = Options {
-        theme: "space".to_string(),
+        theme: None,
         fps: 30,
         list: false,
         help: false,
@@ -59,12 +83,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
             if value.starts_with('-') {
                 return Err("--theme requires a theme name".to_string());
             }
-            options.theme = value;
+            options.theme = Some(value);
         } else if let Some(value) = argument.strip_prefix("--theme=") {
             if value.is_empty() {
                 return Err("--theme requires a theme name".to_string());
             }
-            options.theme = value.to_string();
+            options.theme = Some(value.to_string());
         } else if argument == "--fps" {
             options.fps = parse_fps(
                 &args
@@ -76,7 +100,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
         } else if argument.starts_with('-') {
             return Err(format!("unknown option '{argument}'"));
         } else if !positional_theme {
-            options.theme = argument;
+            options.theme = Some(argument);
             positional_theme = true;
         } else {
             return Err(format!("unexpected argument '{argument}'"));
@@ -85,7 +109,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Options, String>
     if options.list && options.help {
         return Err("--list and --help cannot be combined".to_string());
     }
-    if options.theme.trim().is_empty() {
+    if options
+        .theme
+        .as_deref()
+        .is_some_and(|theme| theme.trim().is_empty())
+    {
         return Err("--theme requires a non-empty theme name".to_string());
     }
     Ok(options)
@@ -109,7 +137,7 @@ fn print_help() {
          Usage: space-terminal [--theme <name>] [--fps <1..120>] [--list]\n\
          \n\
          Options:\n\
-           --theme <name>  Start with a registered theme (default: space)\n\
+           --theme <name>  Start with a registered theme (default: last selected, then space)\n\
            --fps <value>   Focused frame rate (default: 30, range: 1..120)\n\
            --list          List registered theme IDs and descriptions (--list-themes alias)\n\
            -h, --help      Show this help\n\
@@ -134,7 +162,7 @@ mod tests {
     #[test]
     fn cli_options_select_theme_list_and_fps() {
         let options = parse(&["--theme", "aurora", "--fps", "60"]).unwrap();
-        assert_eq!(options.theme, "aurora");
+        assert_eq!(options.theme.as_deref(), Some("aurora"));
         assert_eq!(options.fps, 60);
         assert!(parse(&["--list"]).unwrap().list);
         assert!(parse(&["--help"]).unwrap().help);
@@ -148,5 +176,10 @@ mod tests {
         assert!(parse(&["--fps=121"]).is_err());
         assert!(parse(&["--unknown"]).is_err());
         assert!(parse(&["space", "aurora"]).is_err());
+    }
+
+    #[test]
+    fn no_theme_argument_leaves_preference_resolution_to_startup() {
+        assert_eq!(parse(&[]).unwrap().theme, None);
     }
 }
