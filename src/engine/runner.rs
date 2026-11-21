@@ -5,7 +5,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    thread,
     time::{Duration, Instant},
 };
 
@@ -17,7 +16,8 @@ use crate::themes;
 use crossterm::{
     cursor::{Hide, SetCursorStyle, Show},
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyCode, KeyEvent, KeyModifiers,
     },
     execute,
     style::{Attribute, Print, SetAttribute},
@@ -39,12 +39,14 @@ impl TerminalGuard {
             stdout,
             EnterAlternateScreen,
             EnableMouseCapture,
+            EnableBracketedPaste,
             Print("\x1b[?1004h"),
             Hide
         ) {
             let _ = execute!(
                 stdout,
                 Print("\x1b[?1004l"),
+                DisableBracketedPaste,
                 DisableMouseCapture,
                 LeaveAlternateScreen
             );
@@ -64,6 +66,7 @@ impl TerminalGuard {
                 SetCursorStyle::DefaultUserShape,
                 SetAttribute(Attribute::Reset),
                 Print("\x1b[?1004l"),
+                DisableBracketedPaste,
                 DisableMouseCapture,
                 LeaveAlternateScreen
             );
@@ -302,7 +305,6 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                     }
                     reactivity.note_input();
                     shell.write_input(&encode_key(key, terminal_grid.application_cursor)?)?;
-                    thread::sleep(Duration::from_millis(2));
                     observe_output(
                         &shell,
                         &mut last_output_bytes,

@@ -1,7 +1,7 @@
 use std::io::{self, BufWriter, Stdout, Write};
 
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
+    cursor::MoveTo,
     queue,
     style::{Attribute, Color, SetAttribute, SetBackgroundColor, SetForegroundColor},
 };
@@ -173,11 +173,6 @@ impl Renderer {
                 queue!(stdout, SetAttribute(Attribute::Reset))?;
                 self.output_attrs = None;
             }
-        }
-        if terminal.cursor_visible && cursor.0 < self.width && cursor.1 < self.height {
-            queue!(stdout, MoveTo(cursor.0, cursor.1), Show)?;
-        } else {
-            queue!(stdout, Hide)?;
         }
         stdout.flush()?;
         self.force = false;

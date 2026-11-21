@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
@@ -9,77 +10,64 @@ const MAX_SHARKS: usize = 4;
 const MAX_FOREGROUND_CREATURES: usize = 5;
 const MAX_DISTANT_FISH: usize = 16;
 
-// Large Great White Shark sprites (4-frame swimming cycle with realistic tail undulation)
-pub const LARGE_SHARK_0: [&str; 5] = [
-    "         ▄▄█▄▄        ",
-    "      ▄█████████▄     ",
-    "◄◄◄████████████████●► ",
-    "   ▀█████████████▀▀   ",
-    "       ▀▀███▀▀        ",
-];
-pub const LARGE_SHARK_1: [&str; 5] = [
-    "  ▲      ▄▄█▄▄        ",
-    "  ◄██ ▄█████████▄     ",
-    "   ◄███████████████●► ",
-    "   ▀█████████████▀▀   ",
-    "       ▀▀███▀▀        ",
-];
-pub const LARGE_SHARK_2: [&str; 5] = [
-    "         ▄▄█▄▄        ",
-    "      ▄█████████▄     ",
-    "◄◄◄████████████████●► ",
-    "   ▀█████████████▀▀   ",
-    "       ▀▀███▀▀        ",
-];
-pub const LARGE_SHARK_3: [&str; 5] = [
-    "         ▄▄█▄▄        ",
-    "      ▄█████████▄     ",
-    "   ◄███████████████●► ",
-    "  ◄██ ▀██████████▀▀   ",
-    "  ▼    ▀▀███▀▀        ",
+type Subpixel = Option<(Rgb, char)>;
+type SubpixelCell = [Subpixel; 2];
+type SubpixelBuffer = HashMap<(i32, i32), SubpixelCell>;
+
+// High-Definition Sub-Pixel Shark Sprites
+// Large Great White Shark (42 columns wide x 22 sub-pixel rows high / 11 cell rows high)
+pub const LARGE_SHARK_SPRITE: &[&str] = &[
+    "                                          ", // 0
+    "                                          ", // 1
+    "                     DDDD                 ", // 2
+    "                   DDDDDDDD               ", // 3
+    "    D            DDDDDDDDDDDD             ", // 4
+    "   DDD         DDDDDDDDDDDDDDDD           ", // 5
+    "  DDDDD      DDDDDDDDDDDDDDDDDDDD         ", // 6
+    "   DDD     DDDDDDDDDDDDDDDDDDDDDDDD       ", // 7
+    "         DDDDDDDDDDDDDDDDDDDDDDDDGG       ", // 8
+    "       DDDDDDDDDDDDDDDDDDDDDDDDSSGG       ", // 9
+    "     DDDDDDDDDDDDDDDDDDDDDDDDSSSSBB       ", // 10
+    "    DDDDDDDDDDDDDDDDDDDDDDDDSSSSEBB       ", // 11
+    "    SSSSSSSSSSSSSSSSSSSSSSSSSSSSBBBB      ", // 12
+    "      SSSSSSSSSSSSSSSSSSSSSSSSSSBBBB      ", // 13
+    "        FFFFFFFFFFFFFFFFFFFFFFFFBB        ", // 14
+    "          FFFFFFFFFFFFFFFFFFFFFF          ", // 15
+    "                                          ", // 16
+    "                                          ", // 17
+    "                                          ", // 18
+    "                                          ", // 19
+    "                                          ", // 20
+    "                                          ", // 21
 ];
 
-// Medium Cruiser Shark sprites (4-frame swimming cycle)
-pub const MEDIUM_SHARK_0: [&str; 4] = [
-    "      ▄█▄       ",
-    "   ▄████████▄   ",
-    "◄◄███▓███████●► ",
-    "   ▀████████▀   ",
+// Medium Cruiser Shark (24 columns wide x 12 sub-pixel rows high / 6 cell rows high)
+pub const MEDIUM_SHARK_SPRITE: &[&str] = &[
+    "                        ", // 0
+    "             DDDD       ", // 1
+    "   D       DDDDDDDD     ", // 2
+    "  DDD    DDDDDDDDDDDD   ", // 3
+    " DDDDD DDDDDDDDDDDDGG   ", // 4
+    "SSSSSSSSSSSSSSSSSSSEBB  ", // 5
+    "  SSSSSSSSSSSSSSSSBBBB  ", // 6
+    "    FFFFFFFFFFFFFFBB    ", // 7
+    "                        ", // 8
+    "                        ", // 9
+    "                        ", // 10
+    "                        ", // 11
 ];
-pub const MEDIUM_SHARK_1: [&str; 4] = [
-    " ▲    ▄█▄       ",
-    " ◄██████████▄   ",
-    "  ◄██▓███████●► ",
-    "   ▀████████▀   ",
-];
-pub const MEDIUM_SHARK_2: [&str; 4] = [
-    "      ▄█▄       ",
-    "   ▄████████▄   ",
-    "◄◄███▓███████●► ",
-    "   ▀████████▀   ",
-];
-pub const MEDIUM_SHARK_3: [&str; 4] = [
-    "      ▄█▄       ",
-    "   ▄████████▄   ",
-    "  ◄██▓███████●► ",
-    " ▼ ▀████████▀   ",
-];
-
-// Distant silhouette shark cruising in deep water
-pub const SHADOW_SHARK_0: [&str; 2] = ["    ▲▄▄▄    ", "◄◄████████●►"];
-pub const SHADOW_SHARK_1: [&str; 2] = [" ▲  ▲▄▄▄    ", " ◄████████●►"];
 
 pub const TROPICAL_A: [&str; 3] = ["  ▲  ", "◄███●►", "  ▼  "];
 pub const TROPICAL_B: [&str; 3] = [" ◢█  ", "◄███●►", " ◥█  "];
 
-pub const RAY_A: [&str; 5] = [
+pub const RAY_A: &[&str] = &[
     "  ▄▄████▄▄  ",
     "▄██████████▄",
     "▀██████████▀",
     "    ▀██▀    ",
     "     ││     ",
 ];
-pub const RAY_B: [&str; 5] = [
+pub const RAY_B: &[&str] = &[
     " ▄████████▄ ",
     "▀██████████▀",
     "  ▀██████▀  ",
@@ -87,17 +75,18 @@ pub const RAY_B: [&str; 5] = [
     "     ││     ",
 ];
 
-pub const JELLY_A: [&str; 4] = [" ▄████▄ ", "████████", " ▀▀██▀▀ ", " ⌠│⌡⌠│⌡ "];
-pub const JELLY_B: [&str; 4] = [" ▄████▄ ", " ▓████▓ ", "  ▀██▀  ", "  ││││  "];
+pub const JELLY_A: &[&str] = &[" ▄████▄ ", "████████", " ▀▀██▀▀ ", " ⌠│⌡⌠│⌡ "];
+pub const JELLY_B: &[&str] = &[" ▄████▄ ", " ▓████▓ ", "  ▀██▀  ", "  ││││  "];
 
-pub const SCHOOL_FISH_A: [&str; 3] = [" ▄▄█▄ ", "◄███●►", " ▀▀█▀ "];
-pub const SCHOOL_FISH_B: [&str; 3] = ["  ▄▄█▄", "◄███●►", "  ▀▀█▀"];
+pub const SCHOOL_FISH_A: &[&str] = &[" ▄▄█▄ ", "◄███●►", " ▀▀█▀ "];
+pub const SCHOOL_FISH_B: &[&str] = &["  ▄▄█▄", "◄███●►", "  ▀▀█▀"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SharkSize {
-    Shadow,
-    Medium,
-    Large,
+    Distant, // Layer 1: Far background Braille silhouette
+    Medium,  // Layer 2: Midground cruiser
+    Large,   // Layer 3: Foreground majestic
+    Ultra,   // Layer 4: Ultra close-up giant
 }
 
 #[derive(Clone, Copy)]
@@ -108,6 +97,7 @@ pub struct Shark {
     pub direction: f32,
     pub phase: f32,
     pub size: SharkSize,
+    #[allow(dead_code)]
     pub depth_tint: f32,
 }
 
@@ -243,11 +233,13 @@ impl OceanTheme {
             theme.mid_fish.extend(school);
         }
         if theme.can_swim() {
-            // Immediate shark presence across depths
+            // Immediate shark presence across depths/layers
             let mut shark1 = theme.new_shark();
             shark1.x = width as f32 * 0.25;
+            shark1.size = SharkSize::Large;
             let mut shark2 = theme.new_shark();
             shark2.x = width as f32 * 0.7;
+            shark2.size = SharkSize::Medium;
             shark2.direction = -1.0;
             theme.sharks.push(shark1);
             theme.sharks.push(shark2);
@@ -408,9 +400,10 @@ impl OceanTheme {
 
     pub fn new_shark(&mut self) -> Shark {
         let size = match self.rng.gen_range(0..10) {
-            0..=2 => SharkSize::Shadow,
+            0..=2 => SharkSize::Distant,
             3..=6 => SharkSize::Medium,
-            _ => SharkSize::Large,
+            7..=8 => SharkSize::Large,
+            _ => SharkSize::Ultra,
         };
         let direction = if self.rng.gen_bool(0.5) { 1.0 } else { -1.0 };
         let width = shark_width(size) as f32;
@@ -419,14 +412,16 @@ impl OceanTheme {
             .saturating_sub(self.seabed_height)
             .saturating_sub(shark_height(size));
         let speed = match size {
-            SharkSize::Shadow => self.rng.gen_range(0.9..1.6),
-            SharkSize::Medium => self.rng.gen_range(2.0..3.0),
-            SharkSize::Large => self.rng.gen_range(1.6..2.5),
+            SharkSize::Distant => self.rng.gen_range(0.6..1.1),
+            SharkSize::Medium => self.rng.gen_range(1.8..2.6),
+            SharkSize::Large => self.rng.gen_range(1.3..2.1),
+            SharkSize::Ultra => self.rng.gen_range(2.8..3.8),
         };
         let depth_tint = match size {
-            SharkSize::Shadow => 0.55,
-            SharkSize::Medium => 0.22,
+            SharkSize::Distant => 0.80,
+            SharkSize::Medium => 0.45,
             SharkSize::Large => 0.05,
+            SharkSize::Ultra => 0.0,
         };
         Shark {
             x: if direction > 0.0 {
@@ -448,55 +443,43 @@ impl OceanTheme {
         let upper_water = self
             .height
             .saturating_sub(self.seabed_height)
-            .saturating_sub(4)
-            .max(2);
-        let x = if matches!(kind, CreatureKind::Jellyfish) {
-            self.rng.gen_range(0.0..self.width.max(1) as f32)
-        } else if direction > 0.0 {
-            -10.0
-        } else {
-            self.width as f32 + 3.0
+            .saturating_sub(4);
+        let x = self.rng.gen_range(0.0..self.width.max(1) as f32);
+        let y = self.rng.gen_range(1.0..upper_water.max(2) as f32);
+        let speed = match kind {
+            CreatureKind::Tropical => self.rng.gen_range(1.2..2.0),
+            CreatureKind::Ray => self.rng.gen_range(0.8..1.5),
+            CreatureKind::Jellyfish => self.rng.gen_range(0.4..0.8),
+        };
+        let color = match kind {
+            CreatureKind::Tropical => Rgb(245, 175, 85),
+            CreatureKind::Ray => Rgb(140, 185, 210),
+            CreatureKind::Jellyfish => Rgb(210, 155, 240),
         };
         ForegroundCreature {
             x,
-            y: self.rng.gen_range(1.0..upper_water as f32),
-            speed: match kind {
-                CreatureKind::Tropical => self.rng.gen_range(2.2..3.8),
-                CreatureKind::Ray => self.rng.gen_range(1.3..2.2),
-                CreatureKind::Jellyfish => self.rng.gen_range(0.5..1.0),
-            },
+            y,
+            speed,
             direction,
             phase: self.rng.gen_range(0.0..std::f32::consts::TAU),
-            color: match kind {
-                CreatureKind::Tropical => Rgb(248, 168, 64),
-                CreatureKind::Ray => Rgb(118, 178, 210),
-                CreatureKind::Jellyfish => Rgb(208, 142, 235),
-            },
+            color,
             kind,
         }
     }
 
     pub fn can_swim(&self) -> bool {
-        self.height >= self.seabed_height.saturating_add(6) && self.width >= 10
+        self.width >= 30 && self.height >= 12
     }
 
-    pub fn trigger_bubble_burst(&mut self) {
-        self.burst_active = true;
-        self.burst_timer = 2.5;
-        let surge = 8.min(MAX_BUBBLES.saturating_sub(self.bubbles.len()));
-        for _ in 0..surge {
-            let bubble = self.new_bubble(true);
-            self.bubbles.push(bubble);
-        }
-    }
-
-    fn update_entities(&mut self, dt: f32, activity: f32) {
+    pub fn update_entities(&mut self, dt: f32, activity: f32) {
         // Bubbles update
-        let active_wobble_boost = if self.burst_timer > 0.0 { 1.5 } else { 1.0 };
         for index in 0..self.bubbles.len() {
-            self.bubbles[index].y -= self.bubbles[index].speed * active_wobble_boost * dt;
-            if self.bubbles[index].y < -1.0 {
-                let bubble = self.new_bubble(true);
+            let mut bubble = self.bubbles[index];
+            bubble.y -= bubble.speed * dt;
+            bubble.phase += dt * bubble.wobble_speed;
+            if bubble.y < 0.0 {
+                self.bubbles[index] = self.new_bubble(true);
+            } else {
                 self.bubbles[index] = bubble;
             }
         }
@@ -552,16 +535,16 @@ impl OceanTheme {
             }
         }
 
-        // Sharks (predators with fluid tail undulation)
+        // Sharks (apex predators with fluid sinusoidal tail undulation)
         for shark in &mut self.sharks {
             shark.x += shark.speed * shark.direction * dt;
-            shark.phase += dt * 2.8;
+            shark.phase += dt * 3.2;
         }
         self.sharks.retain(|shark| {
             if shark.direction > 0.0 {
-                shark.x < self.width as f32 + 6.0
+                shark.x < self.width as f32 + 8.0
             } else {
-                shark.x + shark_width(shark.size) as f32 > -6.0
+                shark.x + shark_width(shark.size) as f32 > -8.0
             }
         });
         if self.can_swim() {
@@ -575,7 +558,7 @@ impl OceanTheme {
             }
         }
 
-        // Foreground creatures (rays, tropical, jellyfish)
+        // Foreground creatures
         for creature in &mut self.creatures {
             creature.phase += dt * 2.5;
             match creature.kind {
@@ -625,7 +608,6 @@ impl OceanTheme {
                 let mut color = ambient;
                 let x_f = x as f32;
 
-                // Subtle animated light shafts (caustics) piercing down from surface
                 for beam in 0..caustic_origins.len() {
                     let center = self.width as f32 * caustic_origins[beam]
                         + y as f32 * caustic_slopes[beam]
@@ -638,7 +620,6 @@ impl OceanTheme {
                     color = mix(color, Rgb(75, 160, 202), intensity);
                 }
 
-                // Shimmering water ripples
                 let shimmer =
                     ((x_f * 0.04 + y as f32 * 0.02 + self.time * 0.2).sin() * 1.8).round();
                 let fg = Rgb(
@@ -661,7 +642,6 @@ impl OceanTheme {
         let sand_dark = Rgb(48, 42, 34);
 
         for x in 0..scene.width as i32 {
-            // Naturally curving undulating sand dunes
             let x_f = x as f32;
             let dune = ((x_f * 0.08).sin() * 1.2 + (x_f * 0.18 + 1.2).cos() * 0.6).round() as i32;
             let ground_y = (base_y + dune).clamp(0, scene.height as i32 - 1);
@@ -675,7 +655,6 @@ impl OceanTheme {
                     bg = mix(bg, Rgb(185, 155, 95), 0.25);
                 }
 
-                // Varied, rich sand texture: ripples, shells, pebbles, starfish
                 let glyph = if y == ground_y {
                     match n % 6 {
                         0 => '~',
@@ -686,9 +665,9 @@ impl OceanTheme {
                         _ => '▀',
                     }
                 } else if n % 29 == 0 {
-                    '★' // Small starfish
+                    '★'
                 } else if n % 17 == 0 {
-                    '⚬' // Small shell / sea pebble
+                    '⚬'
                 } else if n % 9 == 0 {
                     '▒'
                 } else if n % 5 == 0 {
@@ -710,7 +689,6 @@ impl OceanTheme {
             }
         }
 
-        // Render seabed features: Kelp forests, corals, rock vents, sea anemones
         for feature in &self.features {
             match feature.kind {
                 BedKind::Kelp => self.render_kelp(scene, *feature),
@@ -729,27 +707,24 @@ impl OceanTheme {
 
         for segment in 0..max_h {
             let y = scene.height as i32 - 1 - segment;
-            // Graceful multi-joint physics: tips sway wider with harmonic wave lag
             let sway = (self.time * 1.8 * active_sway_mult + feature.phase + segment as f32 * 0.45)
                 .sin()
                 * (0.35 + segment as f32 * 0.28);
             let center = feature.x.round() as i32 + sway.round() as i32;
 
             let glyph = if segment == max_h - 1 {
-                '◈' // Budding top leaf
+                '◈'
             } else if segment % 2 == 0 {
                 '▌'
             } else {
                 '▐'
             };
 
-            // Color gradient from deep sea kelp base to light-kissed emerald tip
             let shade = segment as f32 / max_h.max(1) as f32;
             let kelp_color = mix(feature.color, Rgb(85, 225, 155), shade * 0.7);
 
             scene.put_feature(center, y, glyph, kelp_color);
 
-            // Side leaves reaching out into the water
             if segment > 1 && segment < max_h - 1 && segment % 2 == 1 {
                 let side_glyph = if (segment / 2) % 2 == 0 { '⌠' } else { '⌡' };
                 scene.put_feature(
@@ -821,7 +796,6 @@ impl OceanTheme {
     fn render_vent(&self, scene: &mut SceneBuffer<'_>, feature: BedFeature) {
         let bottom = scene.height as i32 - 1;
         let x = feature.x.round() as i32;
-        // Volcanic rock cone with venting orifice
         scene.put_feature(x - 1, bottom, '◢', Rgb(75, 70, 65));
         scene.put_feature(x, bottom, '█', Rgb(55, 50, 48));
         scene.put_feature(x + 1, bottom, '◣', Rgb(75, 70, 65));
@@ -883,11 +857,7 @@ impl OceanTheme {
         for fish in &self.mid_fish {
             let y = fish.y + (self.time * 1.4 + fish.phase).sin() * 0.4;
             let frame = fish.phase.sin() > 0.0;
-            let sprite = if frame {
-                &SCHOOL_FISH_A
-            } else {
-                &SCHOOL_FISH_B
-            };
+            let sprite = if frame { SCHOOL_FISH_A } else { SCHOOL_FISH_B };
             scene.draw_sprite(
                 fish.x.round() as i32,
                 y.round() as i32,
@@ -902,42 +872,79 @@ impl OceanTheme {
         }
     }
 
-    fn render_sharks(&self, scene: &mut SceneBuffer<'_>) {
-        for shark in &self.sharks {
-            let cycle = (shark.phase.rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU
-                * 4.0) as usize;
-            let (sprite, color, eye_row): (&[&str], Rgb, usize) = match (shark.size, cycle % 4) {
-                (SharkSize::Large, 0) => (&LARGE_SHARK_0, Rgb(128, 185, 208), 2),
-                (SharkSize::Large, 1) => (&LARGE_SHARK_1, Rgb(128, 185, 208), 2),
-                (SharkSize::Large, 2) => (&LARGE_SHARK_2, Rgb(128, 185, 208), 2),
-                (SharkSize::Large, _) => (&LARGE_SHARK_3, Rgb(128, 185, 208), 2),
+    fn render_sharks_by_layer(&self, scene: &mut SceneBuffer<'_>) {
+        let deep_water = Rgb(10, 30, 55);
+        let ocean_blue = Rgb(18, 48, 76);
 
-                (SharkSize::Medium, 0) => (&MEDIUM_SHARK_0, Rgb(102, 162, 188), 2),
-                (SharkSize::Medium, 1) => (&MEDIUM_SHARK_1, Rgb(102, 162, 188), 2),
-                (SharkSize::Medium, 2) => (&MEDIUM_SHARK_2, Rgb(102, 162, 188), 2),
-                (SharkSize::Medium, _) => (&MEDIUM_SHARK_3, Rgb(102, 162, 188), 2),
+        // 1. Far Background Layer (Camada Fundo Distante): Braille silhouettes with 80% fog
+        for shark in self.sharks.iter().filter(|s| s.size == SharkSize::Distant) {
+            let braille_silhouettes = ['⠭', '⠷', '⣾', '⣻', '⢿', '⡿', '⠇', '⡇'];
+            let glyph =
+                braille_silhouettes[(shark.phase.abs() * 3.0) as usize % braille_silhouettes.len()];
+            let base_color = Rgb(32, 75, 110);
+            let color = mix(base_color, deep_water, 0.80);
+            scene.put_object(shark.x.round() as i32, shark.y.round() as i32, glyph, color);
+        }
 
-                (SharkSize::Shadow, 0) | (SharkSize::Shadow, 2) => {
-                    (&SHADOW_SHARK_0, Rgb(32, 68, 98), 1)
-                }
-                (SharkSize::Shadow, _) => (&SHADOW_SHARK_1, Rgb(32, 68, 98), 1),
-            };
-
-            // Depth tint shading: distant sharks blend into deep ocean blues
-            let final_color = mix(color, Rgb(12, 38, 64), shark.depth_tint);
-            scene.draw_sprite(
+        // 2. Midground Layer (Camada Meia-Distância): Medium cruiser sharks with 45% atmospheric blue fog
+        for shark in self.sharks.iter().filter(|s| s.size == SharkSize::Medium) {
+            scene.draw_subpixel_shark(
                 shark.x.round() as i32,
                 shark.y.round() as i32,
-                sprite,
+                MEDIUM_SHARK_SPRITE,
                 shark.direction,
-                SpriteStyle {
-                    color: final_color,
-                    eye_color: if shark.size == SharkSize::Shadow {
-                        Rgb(65, 115, 150)
-                    } else {
-                        Rgb(240, 252, 255)
-                    },
-                    eye_row,
+                shark.phase,
+                SubPixelStyle {
+                    dorsal_color: Rgb(42, 72, 102),
+                    side_color: Rgb(78, 128, 168),
+                    belly_color: Rgb(185, 210, 225),
+                    eye_color: Rgb(230, 248, 255),
+                    gill_color: Rgb(22, 42, 65),
+                    fin_color: Rgb(95, 145, 185),
+                    fog_color: ocean_blue,
+                    fog_amount: 0.45,
+                },
+            );
+        }
+
+        // 3. Foreground Layer (Camada Primeiro Plano): Detailed large sharks with crisp TrueColor countershading
+        for shark in self.sharks.iter().filter(|s| s.size == SharkSize::Large) {
+            scene.draw_subpixel_shark(
+                shark.x.round() as i32,
+                shark.y.round() as i32,
+                LARGE_SHARK_SPRITE,
+                shark.direction,
+                shark.phase,
+                SubPixelStyle {
+                    dorsal_color: Rgb(30, 52, 78),
+                    side_color: Rgb(72, 122, 162),
+                    belly_color: Rgb(205, 225, 238),
+                    eye_color: Rgb(245, 252, 255),
+                    gill_color: Rgb(15, 28, 45),
+                    fin_color: Rgb(90, 142, 182),
+                    fog_color: ocean_blue,
+                    fog_amount: 0.05,
+                },
+            );
+        }
+
+        // 4. Ultra Close-Up Layer (Camada Ultra Close-Up): Rare giant silhouette crossing near screen edges
+        for shark in self.sharks.iter().filter(|s| s.size == SharkSize::Ultra) {
+            scene.draw_subpixel_shark(
+                shark.x.round() as i32,
+                shark.y.round() as i32,
+                LARGE_SHARK_SPRITE,
+                shark.direction,
+                shark.phase * 1.5,
+                SubPixelStyle {
+                    dorsal_color: Rgb(18, 32, 48),
+                    side_color: Rgb(48, 88, 122),
+                    belly_color: Rgb(160, 190, 210),
+                    eye_color: Rgb(255, 255, 255),
+                    gill_color: Rgb(8, 15, 25),
+                    fin_color: Rgb(62, 108, 148),
+                    fog_color: ocean_blue,
+                    fog_amount: 0.0,
                 },
             );
         }
@@ -947,12 +954,12 @@ impl OceanTheme {
         for creature in &self.creatures {
             let frame = creature.phase.sin() > 0.0;
             let (sprite, direction): (&[&str], f32) = match (creature.kind, frame) {
-                (CreatureKind::Tropical, false) => (&TROPICAL_A, creature.direction),
-                (CreatureKind::Tropical, true) => (&TROPICAL_B, creature.direction),
-                (CreatureKind::Ray, false) => (&RAY_A, creature.direction),
-                (CreatureKind::Ray, true) => (&RAY_B, creature.direction),
-                (CreatureKind::Jellyfish, false) => (&JELLY_A, 1.0),
-                (CreatureKind::Jellyfish, true) => (&JELLY_B, 1.0),
+                (CreatureKind::Tropical, false) => (TROPICAL_A.as_slice(), creature.direction),
+                (CreatureKind::Tropical, true) => (TROPICAL_B.as_slice(), creature.direction),
+                (CreatureKind::Ray, false) => (RAY_A, creature.direction),
+                (CreatureKind::Ray, true) => (RAY_B, creature.direction),
+                (CreatureKind::Jellyfish, false) => (JELLY_A, 1.0),
+                (CreatureKind::Jellyfish, true) => (JELLY_B, 1.0),
             };
             let y = if matches!(creature.kind, CreatureKind::Jellyfish) {
                 creature.y
@@ -1024,7 +1031,7 @@ impl Theme for OceanTheme {
 
     fn set_output_burst(&mut self, active: bool) {
         if active && !self.burst_active {
-            self.trigger_bubble_burst();
+            self.burst_timer = 1.5;
         }
         self.burst_active = active;
     }
@@ -1055,14 +1062,14 @@ impl Theme for OceanTheme {
             height: self.height,
         };
 
-        // 2. Far / Deep layer: Distant background fish silhouettes
+        // 2. Layer 1: Far / Deep distant background fish & silhouettes
         self.render_distant_fish(&mut scene);
 
         // 3. Seabed layer: Dune contours, textured ripples, kelp forest & corals
         self.render_seabed(&mut scene);
 
-        // 4. Midground layer: Cruising sharks (predators)
-        self.render_sharks(&mut scene);
+        // 4. Layers 1-4: Sharks across 4 depth layers with atmospheric depth fog
+        self.render_sharks_by_layer(&mut scene);
 
         // 5. Midground schooling fish
         self.render_mid_fish(&mut scene);
@@ -1084,14 +1091,20 @@ pub fn seabed_height(height: u16) -> u16 {
 
 pub fn shark_width(size: SharkSize) -> u16 {
     match size {
-        SharkSize::Shadow => 12,
-        SharkSize::Medium => 16,
-        SharkSize::Large => 22,
+        SharkSize::Distant => 8,
+        SharkSize::Medium => 24,
+        SharkSize::Large => 42,
+        SharkSize::Ultra => 64,
     }
 }
 
-pub fn shark_height(_size: SharkSize) -> u16 {
-    5
+pub fn shark_height(size: SharkSize) -> u16 {
+    match size {
+        SharkSize::Distant => 2,
+        SharkSize::Medium => 6,
+        SharkSize::Large => 11,
+        SharkSize::Ultra => 16,
+    }
 }
 
 fn make_cell(ch: char, fg: Rgb, bg: Rgb) -> Cell {
@@ -1137,6 +1150,17 @@ pub struct SpriteStyle {
     pub color: Rgb,
     pub eye_color: Rgb,
     pub eye_row: usize,
+}
+
+pub struct SubPixelStyle {
+    pub dorsal_color: Rgb,
+    pub side_color: Rgb,
+    pub belly_color: Rgb,
+    pub eye_color: Rgb,
+    pub gill_color: Rgb,
+    pub fin_color: Rgb,
+    pub fog_color: Rgb,
+    pub fog_amount: f32,
 }
 
 impl SceneBuffer<'_> {
@@ -1192,6 +1216,99 @@ impl SceneBuffer<'_> {
                 visible |= self.put_object(x + column as i32, y + row_index as i32, glyph, fg);
             });
         }
+        visible
+    }
+
+    pub fn draw_subpixel_shark(
+        &mut self,
+        x: i32,
+        y: i32,
+        sprite: &[&str],
+        direction: f32,
+        phase: f32,
+        style: SubPixelStyle,
+    ) -> bool {
+        let height_sub = sprite.len();
+        if height_sub == 0 {
+            return false;
+        }
+        let width_sub = sprite[0].chars().count();
+        let mut visible = false;
+
+        let mut cell_subpixels: SubpixelBuffer = HashMap::new();
+
+        for (sy, row) in sprite.iter().enumerate() {
+            for (sx, ch) in row.chars().enumerate() {
+                if ch == ' ' {
+                    continue;
+                }
+                let effective_sx = if direction < 0.0 {
+                    width_sub - 1 - sx
+                } else {
+                    sx
+                };
+                let dist_from_head = (width_sub as f32 - 1.0 - effective_sx as f32).max(0.0);
+                let wave_amp = (dist_from_head / width_sub as f32) * 2.2;
+                let dy = (phase + effective_sx as f32 * 0.32).sin() * wave_amp;
+
+                let sub_x = x + effective_sx as i32;
+                let sub_y_f = y as f32 * 2.0 + sy as f32 + dy;
+                let target_cell_x = sub_x;
+                let target_cell_y = (sub_y_f / 2.0).floor() as i32;
+                let sub_mod = ((sub_y_f.round() as i32) % 2).abs();
+
+                if target_cell_x < 0
+                    || target_cell_x >= self.width as i32
+                    || target_cell_y < 0
+                    || target_cell_y >= self.height as i32
+                {
+                    continue;
+                }
+
+                let base_color = match ch {
+                    'D' => style.dorsal_color,
+                    'S' => style.side_color,
+                    'B' => style.belly_color,
+                    'E' => style.eye_color,
+                    'G' => style.gill_color,
+                    'F' => style.fin_color,
+                    _ => style.side_color,
+                };
+
+                let final_color = mix(base_color, style.fog_color, style.fog_amount);
+
+                let cell_key = (target_cell_x, target_cell_y);
+                let entry = cell_subpixels.entry(cell_key).or_insert([None, None]);
+                let half_idx = if sub_mod == 0 { 0 } else { 1 };
+                entry[half_idx] = Some((final_color, ch));
+                visible = true;
+            }
+        }
+
+        for ((cx, cy), [upper, lower]) in cell_subpixels {
+            let index = cy as usize * self.width as usize + cx as usize;
+            if index < self.cells.len() && !self.occupied[index] {
+                let current_cell = self.cells[index];
+                let bg_color = current_cell.bg;
+
+                match (upper, lower) {
+                    (Some((u_col, _)), Some((l_col, _))) => {
+                        self.cells[index] = make_cell('▀', u_col, l_col);
+                        self.occupied[index] = true;
+                    }
+                    (Some((u_col, _)), None) => {
+                        self.cells[index] = make_cell('▀', u_col, bg_color);
+                        self.occupied[index] = true;
+                    }
+                    (None, Some((l_col, _))) => {
+                        self.cells[index] = make_cell('▄', l_col, bg_color);
+                        self.occupied[index] = true;
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+
         visible
     }
 }
@@ -1304,35 +1421,20 @@ mod tests {
     }
 
     #[test]
-    fn shark_sprites_have_distinct_frames_and_mirror_directional_glyphs() {
-        assert_ne!(LARGE_SHARK_0, LARGE_SHARK_1);
-        assert_ne!(MEDIUM_SHARK_0, MEDIUM_SHARK_1);
-        assert_ne!(SHADOW_SHARK_0, SHADOW_SHARK_1);
-        assert!(LARGE_SHARK_0
+    fn subpixel_shark_sprites_are_high_definition() {
+        assert_eq!(LARGE_SHARK_SPRITE.len(), 22);
+        assert_eq!(LARGE_SHARK_SPRITE[0].chars().count(), 42);
+        assert_eq!(MEDIUM_SHARK_SPRITE.len(), 12);
+        assert_eq!(MEDIUM_SHARK_SPRITE[0].chars().count(), 24);
+
+        assert!(LARGE_SHARK_SPRITE
             .iter()
-            .all(|row| row.chars().count() <= shark_width(SharkSize::Large) as usize));
-        assert!(MEDIUM_SHARK_0
+            .flat_map(|row| row.chars())
+            .any(|ch| ch == 'D' || ch == 'S' || ch == 'B'));
+        assert!(MEDIUM_SHARK_SPRITE
             .iter()
-            .all(|row| row.chars().count() <= shark_width(SharkSize::Medium) as usize));
-        assert_eq!(mirror('/'), '\\');
-        assert_eq!(mirror('<'), '>');
-        assert_eq!(mirror('◀'), '▶');
-        assert_eq!(mirror('◄'), '►');
-        assert!(
-            LARGE_SHARK_0
-                .iter()
-                .chain(MEDIUM_SHARK_0.iter())
-                .flat_map(|line| line.chars())
-                .filter(|glyph| matches!(glyph, '█' | '▓' | '▄' | '▀'))
-                .count()
-                > 30
-        );
-        assert!(TROPICAL_A
-            .iter()
-            .chain(RAY_A.iter())
-            .chain(JELLY_A.iter())
-            .flat_map(|line| line.chars())
-            .any(|glyph| matches!(glyph, '█' | '▓' | '▄' | '▀')));
+            .flat_map(|row| row.chars())
+            .any(|ch| ch == 'D' || ch == 'S' || ch == 'B'));
     }
 
     #[test]
