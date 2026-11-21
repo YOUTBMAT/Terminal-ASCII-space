@@ -175,6 +175,7 @@ pub struct SpaceEngine {
     asteroid_groups: Vec<AsteroidGroup>,
     satellites: Vec<Satellite>,
     ambient_lights: Vec<AmbientLight>,
+    ambient_lights_by_row: Vec<Vec<AmbientLight>>,
     solar_system: SolarSystem,
     noise: OpenSimplex,
     time: f32,
@@ -273,6 +274,7 @@ impl SpaceEngine {
             asteroid_groups,
             satellites,
             ambient_lights: Vec::with_capacity(10),
+            ambient_lights_by_row: (0..height).map(|_| Vec::with_capacity(10)).collect(),
             solar_system: new_solar_system(&mut rng, width, height),
             noise: OpenSimplex::new(rng.gen()),
             time: 0.0,
@@ -347,6 +349,8 @@ impl SpaceEngine {
         self.cloud_density.resize(pixel_count, 0.0);
         self.nebula_pixels.resize(pixel_count, Rgb(8, 9, 22));
         self.nebula_density.resize(pixel_count, 0.0);
+        self.ambient_lights_by_row
+            .resize_with(height as usize, || Vec::with_capacity(10));
         self.last_nebula_update = f32::NEG_INFINITY;
         for star in &mut self.stars {
             if star.x >= width as f32 || star.y >= height as f32 {
@@ -597,6 +601,7 @@ impl SpaceEngine {
             }
         }
         self.update_ambient_lights();
+        self.index_ambient_lights_by_row();
         self.encode_pixels();
         self.render_stars(input_rate, warp_drive);
         self.render_asteroids();
@@ -651,6 +656,28 @@ impl SpaceEngine {
                 color,
                 strength,
             });
+        }
+    }
+
+    fn index_ambient_lights_by_row(&mut self) {
+        for row in &mut self.ambient_lights_by_row {
+            row.clear();
+        }
+        if self.height == 0 {
+            return;
+        }
+        let last_row = self.height as usize - 1;
+        for light in &self.ambient_lights {
+            let radius_y = light.radius_y.max(1.0) * 1.75;
+            let first_row = ((light.y - radius_y - 1.0) * 0.5).floor().max(0.0) as usize;
+            let last_light_row = ((light.y + radius_y - 1.0) * 0.5)
+                .ceil()
+                .min(last_row as f32) as usize;
+            if first_row <= last_light_row {
+                for row in &mut self.ambient_lights_by_row[first_row..=last_light_row] {
+                    row.push(*light);
+                }
+            }
         }
     }
 
@@ -716,10 +743,11 @@ impl SpaceEngine {
                 let dy = py as f32 + 0.5 - object.y;
                 let nx = dx / object.radius_x.max(1.0);
                 let ny = dy / object.radius_y.max(1.0);
-                let radius = (nx * nx + ny * ny).sqrt();
-                if radius > extent {
+                let radius_squared = nx * nx + ny * ny;
+                if radius_squared > extent * extent {
                     continue;
                 }
+                let radius = radius_squared.sqrt();
                 let noise = self.noise.get([
                     nx as f64 * 4.7 + object.phase as f64,
                     ny as f64 * 5.2,
@@ -1160,10 +1188,10 @@ impl SpaceEngine {
                 }
                 let dx = (x - object.x) / object.radius_x.max(1.0);
                 let dy = (py - object.y) / object.radius_y.max(1.0);
-                let radius = (dx * dx + dy * dy).sqrt();
+                let radius_squared = dx * dx + dy * dy;
                 match object.kind {
-                    CosmicKind::Sun => radius < 0.72,
-                    CosmicKind::BlackHole => radius < 0.65,
+                    CosmicKind::Sun => radius_squared < 0.72 * 0.72,
+                    CosmicKind::BlackHole => radius_squared < 0.65 * 0.65,
                     _ => false,
                 }
             })
@@ -1305,11 +1333,40 @@ impl SpaceEngine {
         self.cells[index].fg = self.colorize(fg);
     }
 
+    #[cfg(test)]
     fn ambient_colors(&self, x: u16, y: u16, fg: Rgb, cursor_fg: Rgb, bg: Rgb) -> (Rgb, Rgb, Rgb) {
+        self.ambient_colors_with_lights(x, y, fg, cursor_fg, bg, self.ambient_lights.iter())
+    }
+
+    fn ambient_colors_for_row(
+        &self,
+        x: u16,
+        y: u16,
+        fg: Rgb,
+        cursor_fg: Rgb,
+        bg: Rgb,
+    ) -> (Rgb, Rgb, Rgb) {
+        let lights = self
+            .ambient_lights_by_row
+            .get(y as usize)
+            .map(Vec::as_slice)
+            .unwrap_or(&self.ambient_lights);
+        self.ambient_colors_with_lights(x, y, fg, cursor_fg, bg, lights.iter())
+    }
+
+    fn ambient_colors_with_lights<'a>(
+        &self,
+        x: u16,
+        y: u16,
+        fg: Rgb,
+        cursor_fg: Rgb,
+        bg: Rgb,
+        lights: impl Iterator<Item = &'a AmbientLight>,
+    ) -> (Rgb, Rgb, Rgb) {
         let mut fg = fg;
         let mut cursor_fg = cursor_fg;
         let mut bg = bg;
-        for light in &self.ambient_lights {
+        for light in lights {
             let dx = (x as f32 + 0.5 - light.x) / light.radius_x.max(1.0);
             let dy = (y as f32 * 2.0 + 1.0 - light.y) / light.radius_y.max(1.0);
             let distance_squared = dx * dx + dy * dy;
@@ -1393,9 +1450,9 @@ impl Theme for SpaceTheme {
             for x in 0..self.scene.width {
                 let index = y as usize * self.scene.width as usize + x as usize;
                 let mut cell = self.scene.cells[index];
-                (cell.ambient_fg, cell.cursor_fg, cell.ambient_bg) =
-                    self.scene
-                        .ambient_colors(x, y, cell.fg, cell.base_fg, cell.bg);
+                (cell.ambient_fg, cell.cursor_fg, cell.ambient_bg) = self
+                    .scene
+                    .ambient_colors_for_row(x, y, cell.fg, cell.base_fg, cell.bg);
                 canvas_cells[index] = cell;
             }
         }
@@ -1647,8 +1704,11 @@ mod tests {
             strength: 0.3,
         });
         let tinted = engine.ambient_colors(10, 4, background, background, background);
+        engine.index_ambient_lights_by_row();
+        let indexed_tint = engine.ambient_colors_for_row(10, 4, background, background, background);
         assert_ne!(tinted.0, background);
         assert_eq!(tinted.0, tinted.1);
         assert_eq!(tinted.1, tinted.2);
+        assert_eq!(tinted, indexed_tint);
     }
 }

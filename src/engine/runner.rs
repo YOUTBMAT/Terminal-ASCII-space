@@ -3,8 +3,10 @@ use std::{
     panic,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        mpsc::{self, Receiver, RecvTimeoutError},
+        Arc, Mutex,
     },
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -27,6 +29,8 @@ use crossterm::{
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 const UNFOCUSED_FRAME_TIME: Duration = Duration::from_millis(200);
 const CHILD_POLL_TIME: Duration = Duration::from_millis(100);
+const TERMINAL_CHECK_INTERVAL: Duration = Duration::from_millis(250);
+const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const MAX_FPS: u16 = 120;
 
 struct TerminalGuard;
@@ -82,6 +86,148 @@ impl Drop for TerminalGuard {
     }
 }
 
+struct TerminalWatchdog {
+    stop: Arc<AtomicBool>,
+    error: Arc<Mutex<Option<io::Error>>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl TerminalWatchdog {
+    fn start(terminate: Arc<AtomicBool>) -> io::Result<Self> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let error = Arc::new(Mutex::new(None));
+        let thread_stop = Arc::clone(&stop);
+        let thread_error = Arc::clone(&error);
+        let thread = thread::Builder::new()
+            .name("terminal-watchdog".to_string())
+            .spawn(move || {
+                while !thread_stop.load(Ordering::Relaxed) {
+                    match terminal_connection_check() {
+                        Ok(()) => {}
+                        Err(error) if is_terminal_disconnect(&error) => {
+                            terminate.store(true, Ordering::Relaxed);
+                            break;
+                        }
+                        Err(error) => {
+                            *thread_error
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(error);
+                            terminate.store(true, Ordering::Relaxed);
+                            break;
+                        }
+                    }
+                    thread::park_timeout(TERMINAL_CHECK_INTERVAL);
+                }
+            })?;
+        Ok(Self {
+            stop,
+            error,
+            thread: Some(thread),
+        })
+    }
+
+    fn shutdown(&mut self) -> io::Result<()> {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            thread.thread().unpark();
+            if thread.join().is_err() {
+                return Err(io::Error::other("terminal watchdog thread panicked"));
+            }
+        }
+        match self
+            .error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+}
+
+struct TerminalEventReader {
+    stop: Arc<AtomicBool>,
+    events: Receiver<io::Result<Event>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl TerminalEventReader {
+    fn start() -> io::Result<Self> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread_stop = Arc::clone(&stop);
+        let (sender, events) = mpsc::channel();
+        let thread = thread::Builder::new()
+            .name("terminal-events".to_string())
+            .spawn(move || {
+                while !thread_stop.load(Ordering::Relaxed) {
+                    match event::poll(EVENT_POLL_INTERVAL) {
+                        Ok(true) => match event::read() {
+                            Ok(event) => {
+                                if sender.send(Ok(event)).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                            Err(error) => {
+                                let _ = sender.send(Err(error));
+                                break;
+                            }
+                        },
+                        Ok(false) => {}
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                        Err(error) => {
+                            let _ = sender.send(Err(error));
+                            break;
+                        }
+                    }
+                }
+            })?;
+        Ok(Self {
+            stop,
+            events,
+            thread: Some(thread),
+        })
+    }
+
+    fn recv_timeout(&self, timeout: Duration) -> Result<Option<Event>, io::Error> {
+        match self.events.recv_timeout(timeout) {
+            Ok(Ok(event)) => Ok(Some(event)),
+            Ok(Err(error)) => Err(error),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err(io::Error::other(
+                "terminal event reader stopped unexpectedly",
+            )),
+        }
+    }
+
+    fn shutdown(&mut self) -> io::Result<()> {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            if thread.join().is_err() {
+                return Err(io::Error::other("terminal event reader thread panicked"));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for TerminalEventReader {
+    fn drop(&mut self) {
+        if let Err(error) = self.shutdown() {
+            eprintln!("Terminal event reader failed: {error}");
+        }
+    }
+}
+
+impl Drop for TerminalWatchdog {
+    fn drop(&mut self) {
+        if let Err(error) = self.shutdown() {
+            eprintln!("Terminal watchdog failed: {error}");
+        }
+    }
+}
+
 pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std::error::Error>> {
     if !(1..=MAX_FPS).contains(&fps) {
         return Err(io::Error::new(
@@ -101,6 +247,7 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
     #[cfg(unix)]
     signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&terminate))?;
 
+    terminal_connection_check()?;
     let size = terminal::size()?;
     theme.resize(size.0, size.1);
     let mut shell = PtyShell::spawn(size.0, size.1)?;
@@ -109,6 +256,8 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
     let mut renderer = Renderer::new(size.0, size.1);
     let mut canvas = Canvas::new(size.0, size.1);
     let mut reactivity = Reactivity::start();
+    let mut event_reader = TerminalEventReader::start()?;
+    let mut terminal_watchdog = TerminalWatchdog::start(Arc::clone(&terminate))?;
     let mut last_frame = Instant::now();
     let mut focused = true;
     let mut paused = false;
@@ -155,16 +304,10 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                 .unwrap_or(CHILD_POLL_TIME)
         };
         let timeout = until_frame.min(next_child_poll.saturating_duration_since(loop_now));
-        let event = match event::poll(timeout) {
-            Ok(true) => match event::read() {
-                Ok(event) => Some(event),
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => None,
-                Err(_) if terminate.load(Ordering::Relaxed) => break,
-                Err(error) => return Err(error.into()),
-            },
-            Ok(false) => None,
+        let event = match event_reader.recv_timeout(timeout) {
+            Ok(event) => event,
             Err(_) if terminate.load(Ordering::Relaxed) => break,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if is_terminal_disconnect(&error) => break,
             Err(error) => return Err(error.into()),
         };
         if terminate.load(Ordering::Relaxed) {
@@ -371,6 +514,7 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
         }
         if terminal_dirty {
             shell.copy_grid_into(&mut terminal_grid);
+            renderer.terminal_changed();
             terminal_dirty = false;
         }
         let notice = status_notice
@@ -380,14 +524,72 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
         theme.render(&mut canvas);
         let picker = picker_open.then_some((themes::available(), picker_selection));
         if let Err(error) = renderer.draw(&canvas, &terminal_grid, !paused, notice, picker) {
-            if terminate.load(Ordering::Relaxed) {
+            if terminate.load(Ordering::Relaxed) || is_terminal_disconnect(&error) {
                 break;
             }
             return Err(error.into());
         }
     }
 
+    let event_result = event_reader.shutdown();
+    let watchdog_result = terminal_watchdog.shutdown();
+    let shell_result = shell.shutdown();
+    event_result?;
+    watchdog_result?;
+    shell_result?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn terminal_connection_check() -> io::Result<()> {
+    let mut size = libc::winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let result = unsafe {
+        libc::ioctl(
+            libc::STDOUT_FILENO,
+            libc::TIOCGWINSZ as libc::c_ulong,
+            &mut size,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(unix))]
+fn terminal_connection_check() -> io::Result<()> {
+    terminal::size().map(|_| ())
+}
+
+fn is_terminal_disconnect(error: &io::Error) -> bool {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::BrokenPipe | io::ErrorKind::NotConnected | io::ErrorKind::UnexpectedEof
+    ) {
+        return true;
+    }
+
+    #[cfg(unix)]
+    {
+        matches!(
+            error.raw_os_error(),
+            Some(libc::EIO | libc::ENXIO | libc::ENOTTY | libc::EBADF)
+        )
+    }
+    #[cfg(windows)]
+    {
+        matches!(error.raw_os_error(), Some(6 | 109))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        false
+    }
 }
 
 fn frame_interval(paused: bool, focused: bool, fps: u16) -> Option<Duration> {
@@ -481,8 +683,9 @@ fn encode_key(key: KeyEvent, application_cursor: bool) -> Result<Vec<u8>, io::Er
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     let mut bytes = match key.code {
         KeyCode::Char(ch) if ctrl && ch.is_ascii_alphabetic() => {
-            vec![(ch.to_ascii_lowercase() as u8) - b'a' + 1]
+            vec![(ch as u8) & 0x1F]
         }
+
         KeyCode::Char(ch) => {
             let mut buffer = [0; 4];
             ch.encode_utf8(&mut buffer).as_bytes().to_vec()
@@ -588,6 +791,8 @@ mod tests {
         assert_eq!(encode_key(ctrl_c, false).unwrap(), [3]);
         let ctrl_d = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
         assert_eq!(encode_key(ctrl_d, false).unwrap(), [4]);
+        let ctrl_dot = KeyEvent::new(KeyCode::Char('.'), KeyModifiers::CONTROL);
+        assert_eq!(encode_key(ctrl_dot, false).unwrap(), b".");
         for (ch, control_byte) in [('o', 15), ('x', 24), ('g', 7)] {
             let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL);
             assert_eq!(encode_key(key, false).unwrap(), [control_byte]);
@@ -617,5 +822,24 @@ mod tests {
             ),
             't'
         ));
+    }
+
+    #[test]
+    fn terminal_disconnect_errors_are_classified() {
+        assert!(is_terminal_disconnect(&io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "terminal closed"
+        )));
+        #[cfg(unix)]
+        {
+            assert!(is_terminal_disconnect(&io::Error::from_raw_os_error(
+                libc::EIO
+            )));
+            assert!(!is_terminal_disconnect(&io::Error::from_raw_os_error(
+                libc::EACCES
+            )));
+        }
+        #[cfg(windows)]
+        assert!(is_terminal_disconnect(&io::Error::from_raw_os_error(6)));
     }
 }

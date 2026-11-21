@@ -28,6 +28,7 @@ pub struct Renderer {
     output_attrs: Option<u8>,
     output: BufWriter<Stdout>,
     force: bool,
+    text_shadow_dirty: bool,
 }
 
 impl Renderer {
@@ -42,6 +43,7 @@ impl Renderer {
             output_attrs: None,
             output: BufWriter::with_capacity(128 * 1024, io::stdout()),
             force: true,
+            text_shadow_dirty: true,
         }
     }
 
@@ -53,10 +55,15 @@ impl Renderer {
         self.text_shadow
             .resize(width as usize * height as usize, false);
         self.force = true;
+        self.text_shadow_dirty = true;
     }
 
     pub fn force_redraw(&mut self) {
         self.force = true;
+    }
+
+    pub fn terminal_changed(&mut self) {
+        self.text_shadow_dirty = true;
     }
 
     pub fn draw(
@@ -70,7 +77,10 @@ impl Renderer {
         debug_assert_eq!(self.width, canvas.width);
         debug_assert_eq!(self.height, canvas.height);
         let cursor = terminal.cursor;
-        self.update_text_shadow(terminal);
+        if self.text_shadow_dirty {
+            self.update_text_shadow(terminal);
+            self.text_shadow_dirty = false;
+        }
         self.notice_chars.clear();
         if let Some((text, _)) = notice {
             self.notice_chars.extend(['[', ' ']);
@@ -89,6 +99,7 @@ impl Renderer {
         };
         for y in 0..self.height {
             row_cells.clear();
+            let start = y as usize * self.width as usize;
             for x in 0..self.width {
                 let term_cell = terminal
                     .cells
@@ -124,7 +135,6 @@ impl Renderer {
                 draw_picker_row(row_cells, y, self.width, self.height, items, selected);
             }
             normalize_wide_cells(row_cells, terminal, y, cursor);
-            let start = y as usize * self.width as usize;
             let end = start + row_cells.len();
             let line_changed = self.force || row_cells.as_slice() != &self.previous[start..end];
             if line_changed {
@@ -516,6 +526,21 @@ mod tests {
         assert!(renderer.text_shadow[6]);
         assert!(renderer.text_shadow[8]);
         assert!(!renderer.text_shadow[0]);
+    }
+
+    #[test]
+    fn terminal_changes_invalidate_the_cached_text_shadow() {
+        let mut terminal = TerminalGrid::new(5, 3);
+        let mut renderer = Renderer::new(5, 3);
+        renderer.update_text_shadow(&terminal);
+        renderer.text_shadow_dirty = false;
+
+        terminal.cells[7].ch = 'x';
+        renderer.terminal_changed();
+        assert!(renderer.text_shadow_dirty);
+        renderer.update_text_shadow(&terminal);
+        assert!(renderer.text_shadow[6]);
+        assert!(renderer.text_shadow[8]);
     }
 
     #[test]

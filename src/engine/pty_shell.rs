@@ -1,7 +1,7 @@
 use std::{
     io::{self, Read, Write},
     sync::{Arc, Mutex},
-    thread,
+    thread::{self, JoinHandle},
 };
 
 pub use crate::engine::canvas::Rgb;
@@ -23,6 +23,8 @@ pub enum PtyShellError {
     Pty(#[from] anyhow::Error),
     #[error("PTY output reader failed: {0}")]
     Reader(#[source] io::Error),
+    #[error("PTY output reader thread panicked")]
+    ReaderThreadPanicked,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -208,10 +210,20 @@ pub struct PtyShell {
     emulator: Arc<Mutex<Emulator>>,
     output_bytes: Arc<std::sync::atomic::AtomicU64>,
     reader_error: Arc<Mutex<Option<io::Error>>>,
+    reader_thread: Option<JoinHandle<()>>,
+    stopped: bool,
 }
 
 impl PtyShell {
     pub fn spawn(width: u16, height: u16) -> Result<Self, PtyShellError> {
+        Self::spawn_with_command(width, height, shell_command())
+    }
+
+    fn spawn_with_command(
+        width: u16,
+        height: u16,
+        command: CommandBuilder,
+    ) -> Result<Self, PtyShellError> {
         let system = native_pty_system();
         let pair = system.openpty(PtySize {
             rows: height,
@@ -219,7 +231,6 @@ impl PtyShell {
             pixel_width: 0,
             pixel_height: 0,
         })?;
-        let command = shell_command();
         let child = pair.slave.spawn_command(command)?;
         drop(pair.slave);
         let reader = pair.master.try_clone_reader()?;
@@ -227,7 +238,7 @@ impl PtyShell {
         let emulator = Arc::new(Mutex::new(Emulator::new(width, height)));
         let output_bytes = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let reader_error = Arc::new(Mutex::new(None));
-        start_reader(
+        let reader_thread = start_reader(
             reader,
             Arc::clone(&emulator),
             Arc::clone(&output_bytes),
@@ -240,6 +251,8 @@ impl PtyShell {
             emulator,
             output_bytes,
             reader_error,
+            reader_thread: Some(reader_thread),
+            stopped: false,
         })
     }
 
@@ -367,11 +380,70 @@ impl PtyShell {
         }
         Ok(false)
     }
+
+    pub fn shutdown(&mut self) -> Result<(), PtyShellError> {
+        if self.stopped {
+            return Ok(());
+        }
+
+        let mut shutdown_error = None;
+        #[cfg(unix)]
+        if let Some(process_group) = self.master.process_group_leader() {
+            if process_group > 1 {
+                let result = unsafe { libc::kill(-process_group, libc::SIGHUP) };
+                if result != 0 {
+                    let error = io::Error::last_os_error();
+                    if error.raw_os_error() != Some(libc::ESRCH) {
+                        shutdown_error = Some(PtyShellError::Io(error));
+                    }
+                }
+            }
+        }
+
+        match self.child.try_wait() {
+            Ok(None) => {
+                if let Err(error) = self.child.kill() {
+                    if self.child.try_wait().is_ok_and(|status| status.is_none())
+                        && shutdown_error.is_none()
+                    {
+                        shutdown_error = Some(PtyShellError::Io(error));
+                    }
+                }
+            }
+            Ok(Some(_)) => {}
+            Err(error) => {
+                if shutdown_error.is_none() {
+                    shutdown_error = Some(PtyShellError::Io(error));
+                }
+                if let Err(error) = self.child.kill() {
+                    if shutdown_error.is_none() {
+                        shutdown_error = Some(PtyShellError::Io(error));
+                    }
+                }
+            }
+        }
+
+        if let Err(error) = self.child.wait() {
+            if shutdown_error.is_none() {
+                shutdown_error = Some(PtyShellError::Io(error));
+            }
+        }
+        if let Some(reader_thread) = self.reader_thread.take() {
+            if reader_thread.join().is_err() && shutdown_error.is_none() {
+                shutdown_error = Some(PtyShellError::ReaderThreadPanicked);
+            }
+        }
+        self.stopped = true;
+
+        shutdown_error.map_or(Ok(()), Err)
+    }
 }
 
 impl Drop for PtyShell {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        if let Err(error) = self.shutdown() {
+            eprintln!("Could not fully shut down PTY shell: {error}");
+        }
     }
 }
 
@@ -380,7 +452,7 @@ fn start_reader(
     emulator: Arc<Mutex<Emulator>>,
     output_bytes: Arc<std::sync::atomic::AtomicU64>,
     reader_error: Arc<Mutex<Option<io::Error>>>,
-) {
+) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
         loop {
@@ -400,7 +472,7 @@ fn start_reader(
                 }
             }
         }
-    });
+    })
 }
 
 fn mouse_code(kind: MouseEventKind) -> Option<(u16, bool, bool)> {
@@ -437,6 +509,9 @@ fn shell_command() -> CommandBuilder {
     {
         let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string());
         let mut cmd = CommandBuilder::new(shell);
+        if let Ok(cwd) = std::env::current_dir() {
+            cmd.cwd(cwd);
+        }
         cmd.env("SPACE_TERMINAL_ACTIVE", "1");
         cmd
     }
@@ -444,6 +519,9 @@ fn shell_command() -> CommandBuilder {
     {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(shell);
+        if let Ok(cwd) = std::env::current_dir() {
+            cmd.cwd(cwd);
+        }
         cmd.env("TERM", "xterm-256color");
         cmd.env("SPACE_TERMINAL_ACTIVE", "1");
         cmd
@@ -530,5 +608,25 @@ mod tests {
             Some((2, true, false))
         );
         assert_eq!(utf8_mouse_character(1), Some('!'));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shutdown_stops_foreground_command_and_joins_reader() {
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.arg("-c");
+        command.arg("printf 'ready\\n'; sleep 30");
+        let start = std::time::Instant::now();
+        let mut shell = PtyShell::spawn_with_command(80, 24, command).unwrap();
+        let output_deadline = start + std::time::Duration::from_secs(2);
+        while shell.output_bytes() == 0 && std::time::Instant::now() < output_deadline {
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(shell.output_bytes() > 0);
+
+        shell.shutdown().unwrap();
+
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        assert!(shell.reader_thread.is_none());
     }
 }
