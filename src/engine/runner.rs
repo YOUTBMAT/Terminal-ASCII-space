@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    thread,
     time::{Duration, Instant},
 };
 
@@ -247,6 +248,7 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                                 picker_open = false;
                                 scene_dirty = true;
                                 renderer.force_redraw();
+                                continue;
                             }
                         }
                     }
@@ -300,6 +302,15 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
                     }
                     reactivity.note_input();
                     shell.write_input(&encode_key(key, terminal_grid.application_cursor)?)?;
+                    thread::sleep(Duration::from_millis(2));
+                    observe_output(
+                        &shell,
+                        &mut last_output_bytes,
+                        &mut burst_until,
+                        &mut terminal_dirty,
+                        Instant::now(),
+                    );
+                    scene_dirty = true;
                 }
                 Event::Resize(width, height) => {
                     shell.resize(width, height)?;
@@ -475,33 +486,47 @@ fn encode_key(key: KeyEvent, application_cursor: bool) -> Result<Vec<u8>, io::Er
             ch.encode_utf8(&mut buffer).as_bytes().to_vec()
         }
         KeyCode::Enter => vec![b'\r'],
-        KeyCode::Backspace => vec![0x7f],
+        KeyCode::Backspace => {
+            if ctrl {
+                vec![0x17] // Ctrl+W / word erase
+            } else {
+                vec![0x7f]
+            }
+        }
         KeyCode::Tab => vec![b'\t'],
         KeyCode::BackTab => b"\x1b[Z".to_vec(),
         KeyCode::Esc => vec![0x1b],
         KeyCode::Up => {
-            if application_cursor {
+            if ctrl {
+                b"\x1b[1;5A".to_vec()
+            } else if application_cursor {
                 b"\x1bOA".to_vec()
             } else {
                 b"\x1b[A".to_vec()
             }
         }
         KeyCode::Down => {
-            if application_cursor {
+            if ctrl {
+                b"\x1b[1;5B".to_vec()
+            } else if application_cursor {
                 b"\x1bOB".to_vec()
             } else {
                 b"\x1b[B".to_vec()
             }
         }
         KeyCode::Right => {
-            if application_cursor {
+            if ctrl {
+                b"\x1b[1;5C".to_vec()
+            } else if application_cursor {
                 b"\x1bOC".to_vec()
             } else {
                 b"\x1b[C".to_vec()
             }
         }
         KeyCode::Left => {
-            if application_cursor {
+            if ctrl {
+                b"\x1b[1;5D".to_vec()
+            } else if application_cursor {
                 b"\x1bOD".to_vec()
             } else {
                 b"\x1b[D".to_vec()
@@ -547,6 +572,10 @@ mod tests {
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
         assert_eq!(encode_key(up, false).unwrap(), b"\x1b[A");
         assert_eq!(encode_key(up, true).unwrap(), b"\x1bOA");
+        let ctrl_left = KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL);
+        assert_eq!(encode_key(ctrl_left, false).unwrap(), b"\x1b[1;5D");
+        let ctrl_right = KeyEvent::new(KeyCode::Right, KeyModifiers::CONTROL);
+        assert_eq!(encode_key(ctrl_right, false).unwrap(), b"\x1b[1;5C");
     }
 
     #[test]

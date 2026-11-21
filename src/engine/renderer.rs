@@ -1,7 +1,7 @@
 use std::io::{self, BufWriter, Stdout, Write};
 
 use crossterm::{
-    cursor::MoveTo,
+    cursor::{Hide, MoveTo, Show},
     queue,
     style::{Attribute, Color, SetAttribute, SetBackgroundColor, SetForegroundColor},
 };
@@ -95,7 +95,7 @@ impl Renderer {
                     .get(y as usize * terminal.width as usize + x as usize)
                     .copied()
                     .unwrap_or_default();
-                let protect_cursor = x.abs_diff(cursor.0) <= 1 && y.abs_diff(cursor.1) <= 1;
+                let protect_cursor = terminal.cursor_visible && x == cursor.0 && y == cursor.1;
                 let mut cell = canvas.composed_cell(
                     x,
                     y,
@@ -113,7 +113,11 @@ impl Renderer {
             }
             if terminal.cursor_visible && cursor.1 == y && cursor.0 < self.width {
                 if let Some(cell) = row_cells.get_mut(cursor.0 as usize) {
-                    apply_cursor(cell, terminal.cursor_style);
+                    let has_text = terminal
+                        .cells
+                        .get(y as usize * terminal.width as usize + cursor.0 as usize)
+                        .is_some_and(|c| c.ch != ' ');
+                    apply_cursor(cell, terminal.cursor_style, has_text);
                 }
             }
             if let Some((items, selected)) = picker {
@@ -169,6 +173,11 @@ impl Renderer {
                 queue!(stdout, SetAttribute(Attribute::Reset))?;
                 self.output_attrs = None;
             }
+        }
+        if terminal.cursor_visible && cursor.0 < self.width && cursor.1 < self.height {
+            queue!(stdout, MoveTo(cursor.0, cursor.1), Show)?;
+        } else {
+            queue!(stdout, Hide)?;
         }
         stdout.flush()?;
         self.force = false;
@@ -436,17 +445,28 @@ fn set_attributes(
     Ok(())
 }
 
-fn apply_cursor(cell: &mut Cell, style: TerminalCursorStyle) {
-    cell.ch = match style {
-        TerminalCursorStyle::BlinkBlock | TerminalCursorStyle::SteadyBlock => '█',
-        TerminalCursorStyle::BlinkUnderline | TerminalCursorStyle::SteadyUnderline => '▁',
-        TerminalCursorStyle::Default
-        | TerminalCursorStyle::BlinkVerticalBar
-        | TerminalCursorStyle::SteadyVerticalBar => '▏',
-    };
-    cell.fg = Rgb(240, 245, 255);
-    cell.attrs = 0;
-    cell.wide_continuation = false;
+fn apply_cursor(cell: &mut Cell, style: TerminalCursorStyle, has_text: bool) {
+    if has_text {
+        match style {
+            TerminalCursorStyle::BlinkUnderline | TerminalCursorStyle::SteadyUnderline => {
+                cell.attrs |= CELL_ATTR_UNDERLINE;
+            }
+            _ => {
+                cell.attrs ^= CELL_ATTR_INVERSE;
+            }
+        }
+    } else {
+        cell.ch = match style {
+            TerminalCursorStyle::BlinkBlock | TerminalCursorStyle::SteadyBlock => '█',
+            TerminalCursorStyle::BlinkUnderline | TerminalCursorStyle::SteadyUnderline => '▁',
+            TerminalCursorStyle::Default
+            | TerminalCursorStyle::BlinkVerticalBar
+            | TerminalCursorStyle::SteadyVerticalBar => '▏',
+        };
+        cell.fg = Rgb(240, 245, 255);
+        cell.attrs = 0;
+        cell.wide_continuation = false;
+    }
 }
 
 fn find_notice_position(
@@ -506,15 +526,40 @@ mod tests {
     #[test]
     fn cursor_is_rendered_as_a_static_marker() {
         let mut cell = Cell::default();
-        apply_cursor(&mut cell, TerminalCursorStyle::BlinkVerticalBar);
+        apply_cursor(&mut cell, TerminalCursorStyle::BlinkVerticalBar, false);
         assert_eq!(cell.ch, '▏');
         assert_eq!(cell.fg, Rgb(240, 245, 255));
 
-        apply_cursor(&mut cell, TerminalCursorStyle::BlinkBlock);
+        apply_cursor(&mut cell, TerminalCursorStyle::BlinkBlock, false);
         assert_eq!(cell.ch, '█');
 
-        apply_cursor(&mut cell, TerminalCursorStyle::BlinkUnderline);
+        apply_cursor(&mut cell, TerminalCursorStyle::BlinkUnderline, false);
         assert_eq!(cell.ch, '▁');
+    }
+
+    #[test]
+    fn cursor_over_text_preserves_character_and_inverts() {
+        let mut cell = Cell {
+            ch: 'W',
+            attrs: 0,
+            ..Cell::default()
+        };
+        apply_cursor(&mut cell, TerminalCursorStyle::BlinkBlock, true);
+        assert_eq!(cell.ch, 'W');
+        assert_ne!(cell.attrs & CELL_ATTR_INVERSE, 0);
+
+        let mut underline_cell = Cell {
+            ch: 'W',
+            attrs: 0,
+            ..Cell::default()
+        };
+        apply_cursor(
+            &mut underline_cell,
+            TerminalCursorStyle::BlinkUnderline,
+            true,
+        );
+        assert_eq!(underline_cell.ch, 'W');
+        assert_ne!(underline_cell.attrs & CELL_ATTR_UNDERLINE, 0);
     }
 
     #[test]
