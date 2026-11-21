@@ -476,6 +476,7 @@ dependencies = [
  "signal-hook",
  "sysinfo",
  "thiserror",
+ "unicode-width",
  "vt100",
 ]
 
