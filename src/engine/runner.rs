@@ -201,10 +201,12 @@ impl TerminalEventReader {
         }
     }
 
-    fn shutdown(&mut self) -> io::Result<()> {
+    fn shutdown(&mut self, detach: bool) -> io::Result<()> {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(thread) = self.thread.take() {
-            if thread.join().is_err() {
+            if detach {
+                drop(thread);
+            } else if thread.join().is_err() {
                 return Err(io::Error::other("terminal event reader thread panicked"));
             }
         }
@@ -214,7 +216,7 @@ impl TerminalEventReader {
 
 impl Drop for TerminalEventReader {
     fn drop(&mut self) {
-        if let Err(error) = self.shutdown() {
+        if let Err(error) = self.shutdown(true) {
             eprintln!("Terminal event reader failed: {error}");
         }
     }
@@ -307,7 +309,10 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
         let event = match event_reader.recv_timeout(timeout) {
             Ok(event) => event,
             Err(_) if terminate.load(Ordering::Relaxed) => break,
-            Err(error) if is_terminal_disconnect(&error) => break,
+            Err(error) if is_terminal_disconnect(&error) => {
+                terminate.store(true, Ordering::Relaxed);
+                break;
+            }
             Err(error) => return Err(error.into()),
         };
         if terminate.load(Ordering::Relaxed) {
@@ -524,14 +529,18 @@ pub(super) fn run(mut theme: Box<dyn Theme>, fps: u16) -> Result<(), Box<dyn std
         theme.render(&mut canvas);
         let picker = picker_open.then_some((themes::available(), picker_selection));
         if let Err(error) = renderer.draw(&canvas, &terminal_grid, !paused, notice, picker) {
-            if terminate.load(Ordering::Relaxed) || is_terminal_disconnect(&error) {
+            if is_terminal_disconnect(&error) {
+                terminate.store(true, Ordering::Relaxed);
+                break;
+            }
+            if terminate.load(Ordering::Relaxed) {
                 break;
             }
             return Err(error.into());
         }
     }
 
-    let event_result = event_reader.shutdown();
+    let event_result = event_reader.shutdown(terminate.load(Ordering::Relaxed));
     let watchdog_result = terminal_watchdog.shutdown();
     let shell_result = shell.shutdown();
     event_result?;
